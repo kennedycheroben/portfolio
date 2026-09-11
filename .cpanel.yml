@@ -1,5 +1,5 @@
 ---
 deployment:
   tasks:
-    - export DEPLOYPATH=/home/xqtrqexj/public_html/
+    - export DEPLOYPATH=/home/xqtrqexj/public_html/portfolio/
     - /bin/rsync -av --exclude='.git*' --exclude='.env*' --exclude='.sofa' ./ $DEPLOYPATH
