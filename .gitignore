@@ -1,0 +1,16 @@
+.env
+.env.local
+.env.*
+!.env.example
+.sofa/
+
+# Optional dependency caching
+node_modules/
+vendor/
+
+# OS & IDE temporary files
+.DS_Store
+Thumbs.db
+*.log
+.vscode/
+.idea/

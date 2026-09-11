@@ -1,0 +1,36 @@
+Options -Indexes
+DirectoryIndex index.php
+
+<FilesMatch "(^\.|\.env|\.log$|\.sql$|\.bak$|\.backup$|composer\.(json|lock)$|package(-lock)?\.json$)">
+  Require all denied
+</FilesMatch>
+
+<IfModule mod_headers.c>
+  Header always unset X-Powered-By
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set Cross-Origin-Opener-Policy "same-origin"
+  <FilesMatch "\.(?:css|js|webp|png|jpg|jpeg|woff2?|webm|mp4)$">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+  </FilesMatch>
+  <FilesMatch "\.php$">
+    Header set Cache-Control "no-store, private"
+  </FilesMatch>
+</IfModule>
+
+<IfModule mod_mime.c>
+  AddType video/webm .webm
+  AddType video/mp4 .mp4
+</IfModule>
+
+<IfModule mod_deflate.c>
+  AddOutputFilterByType DEFLATE text/html text/plain text/css application/javascript application/json image/svg+xml
+</IfModule>
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteRule ^ 404.php [END]
+</IfModule>
+
+ErrorDocument 500 default

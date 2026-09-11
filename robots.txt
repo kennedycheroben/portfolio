@@ -1,0 +1,10 @@
+User-agent: *
+Allow: /
+Disallow: /admin/
+Disallow: /api/
+Disallow: /forms/
+Disallow: /login.php
+Disallow: /register.php
+Disallow: /login-signup.php
+
+Sitemap: https://kennedycheroben.co.ke/sitemap.xml
