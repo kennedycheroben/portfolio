@@ -5,8 +5,9 @@
 .sofa/
 
 # Optional dependency caching
-node_modules/
-vendor/
+/vendor/
+!assets/vendor/
+
 
 # OS & IDE temporary files
 .DS_Store
