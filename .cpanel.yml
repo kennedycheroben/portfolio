@@ -1,6 +1,10 @@
 ---
 deployment:
   tasks:
-    - export DEPLOYPATH=/home/xqtrqexj/public_html/
-    - /bin/cp -r * $DEPLOYPATH
-    - /bin/cp .htaccess $DEPLOYPATH 2>/dev/null || true
+    - /bin/mkdir -p /home/xqtrqexj/public_html
+    - /bin/cp -rf * /home/xqtrqexj/public_html/
+    - /bin/cp -f .htaccess /home/xqtrqexj/public_html/ 2>/dev/null || true
+    - /bin/chmod 755 /home/xqtrqexj/public_html 2>/dev/null || true
+    - /bin/chmod 644 /home/xqtrqexj/public_html/.htaccess 2>/dev/null || true
+    - if [ -d /home/xqtrqexj/portfolio ]; then /bin/cp -rf * /home/xqtrqexj/portfolio/ && /bin/cp -f .htaccess /home/xqtrqexj/portfolio/ && /bin/chmod 755 /home/xqtrqexj/portfolio && /bin/chmod 644 /home/xqtrqexj/portfolio/.htaccess; fi 2>/dev/null || true
+    - if [ -d /home/xqtrqexj/public_html/portfolio ]; then /bin/cp -rf * /home/xqtrqexj/public_html/portfolio/ && /bin/cp -f .htaccess /home/xqtrqexj/public_html/portfolio/ && /bin/chmod 755 /home/xqtrqexj/public_html/portfolio && /bin/chmod 644 /home/xqtrqexj/public_html/portfolio/.htaccess; fi 2>/dev/null || true
