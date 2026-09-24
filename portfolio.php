@@ -35,7 +35,7 @@ require __DIR__ . '/includes/header.php';
     ?>
       <article class="work-card reveal" data-category="<?= e($project['category']) ?>">
         <?php if ($detailUrl): ?><a class="work-card-image" href="<?= e($detailUrl) ?>" <?= str_starts_with($detailUrl, 'http') ? 'target="_blank" rel="noopener noreferrer"' : '' ?>><?php else: ?><div class="work-card-image"><?php endif; ?>
-          <img src="<?= e($image) ?>" width="900" height="680" loading="lazy" alt="<?= e($project['title']) ?> project preview">
+          <img src="<?= e($image) ?>" width="900" height="680" loading="lazy" alt="<?= e($project['title']) ?> project preview" onerror="this.onerror=null;this.src='<?= e(site_url('assets/img/cheroben_logo.webp')) ?>';">
           <?php if ($detailUrl): ?><span><i class="bi bi-arrow-up-right"></i></span><?php endif; ?>
         <?= $detailUrl ? '</a>' : '</div>' ?>
         <div class="work-card-copy"><p class="eyebrow"><?= e(ucwords(str_replace('-', ' ', (string) $project['category']))) ?></p><h2><?php if ($detailUrl): ?><a href="<?= e($detailUrl) ?>" <?= str_starts_with($detailUrl, 'http') ? 'target="_blank" rel="noopener noreferrer"' : '' ?>><?= e($project['title']) ?></a><?php else: ?><?= e($project['title']) ?><?php endif; ?></h2><p><?= e(text_excerpt((string) $project['description'], 180)) ?></p></div>

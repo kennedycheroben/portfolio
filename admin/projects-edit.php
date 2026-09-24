@@ -1,7 +1,7 @@
 <?php
-require_once '../includes/auth.php';
+require_once __DIR__ . '/../includes/auth.php';
 requireAdmin();
-require_once '../includes/db.php';
+require_once __DIR__ . '/../includes/db.php';
 
 $id = filter_input(INPUT_GET, 'id', FILTER_VALIDATE_INT) ?: 0;
 $stmt = $pdo->prepare('SELECT * FROM projects WHERE id = ?');
@@ -59,9 +59,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Edit Project - Portfolio</title>
-  <link href="../assets/vendor/bootstrap/css/bootstrap.min.css" rel="stylesheet">
-  <link href="../assets/vendor/bootstrap-icons/bootstrap-icons.min.css" rel="stylesheet">
-  <link href="../assets/css/main.css?v=1.0.1" rel="stylesheet">
+  <link rel="icon" type="image/x-icon" href="../favicon.ico">
+  <link rel="icon" type="image/webp" href="../assets/img/cheroben_logo.webp">
+  <link rel="apple-touch-icon" href="../assets/img/cheroben_logo.webp">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="../assets/css/main.css?v=20260911_2" rel="stylesheet">
   <style>
     .admin-body { background: var(--background-color); min-height: 100vh; }
     .admin-sidebar { background: var(--surface-color); border-right: 1px solid color-mix(in srgb, var(--default-color), transparent 92%); width: 250px; position: fixed; top: 0; left: 0; height: 100vh; padding: 24px 16px; overflow-y: auto; }
@@ -207,16 +210,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <div class="mb-3">
           <label class="form-label">Project Image (File Upload)</label>
           <input type="file" name="image" class="form-control" accept="image/jpeg,image/png,image/webp">
-          <?php if ($project['image_url'] && !str_starts_with($project['image_url'], 'http')): ?>
-            <img src="../<?= htmlspecialchars($project['image_url']) ?>" alt="" class="preview-img" loading="lazy">
+          <?php if ($project['image_url']): ?>
+            <img src="<?= e(project_image_url($project['image_url'])) ?>" alt="" class="preview-img" loading="lazy" onerror="this.onerror=null;this.src='<?= e(site_url('assets/img/cheroben_logo.webp')) ?>';">
           <?php endif; ?>
         </div>
         <div class="mb-3">
           <label class="form-label">Or Image Cloud URL (S3/R2)</label>
           <input type="url" name="image_url" class="form-control" value="<?= htmlspecialchars(str_starts_with($project['image_url'], 'http') ? $project['image_url'] : '') ?>" placeholder="https://bucket.r2.cloudflarestorage.com/image.png">
-          <?php if ($project['image_url'] && str_starts_with($project['image_url'], 'http')): ?>
-            <img src="<?= htmlspecialchars($project['image_url']) ?>" alt="" class="preview-img" loading="lazy">
-          <?php endif; ?>
         </div>
         <div class="mb-3">
           <label class="form-label">Project Video Cloud URL (S3/R2 for Reels feed)</label>

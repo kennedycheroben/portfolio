@@ -8,7 +8,7 @@ if (!headers_sent()) {
     header('X-Frame-Options: DENY');
     header('Referrer-Policy: strict-origin-when-cross-origin');
     header('Permissions-Policy: camera=(), microphone=(), geolocation=()');
-    header("Content-Security-Policy: default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
+    header("Content-Security-Policy: default-src 'self'; img-src 'self' data: https:; style-src 'self' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com 'unsafe-inline'; script-src 'self' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com 'unsafe-inline'; font-src 'self' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
     if (getenv('APP_ENV') === 'production') {
         header('Strict-Transport-Security: max-age=31536000; includeSubDomains');
     }
@@ -189,7 +189,24 @@ function project_image_url(?string $path, string $fallback = 'assets/img/portfol
         $path = $fallback;
     }
 
-    return safe_external_url($path) ?? site_url(ltrim($path, '/'));
+    $external = safe_external_url($path);
+    if ($external !== null) {
+        return $external;
+    }
+
+    $cleanPath = ltrim($path, '/');
+    $fullPath = dirname(__DIR__) . '/' . $cleanPath;
+    if (file_exists($fullPath)) {
+        return site_url($cleanPath);
+    }
+
+    $cleanFallback = ltrim($fallback, '/');
+    $fullFallback = dirname(__DIR__) . '/' . $cleanFallback;
+    if (file_exists($fullFallback)) {
+        return site_url($cleanFallback);
+    }
+
+    return site_url('assets/img/cheroben_logo.webp');
 }
 
 function save_project_upload(array $file): string

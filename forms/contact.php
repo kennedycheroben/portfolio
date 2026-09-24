@@ -45,8 +45,9 @@ try {
     }
 
     $smtpPassword = (string) (getenv('SMTP_PASS') ?: getenv('SMTP_PASSWORD') ?: '');
-    if (getenv('SMTP_HOST') && getenv('SMTP_USER') && $smtpPassword !== '' && getenv('CONTACT_TO')) {
-        require_once __DIR__ . '/../assets/vendor/php-email-form/php-email-form.php';
+    $emailFormScript = __DIR__ . '/../assets/vendor/php-email-form/php-email-form.php';
+    if (getenv('SMTP_HOST') && getenv('SMTP_USER') && $smtpPassword !== '' && getenv('CONTACT_TO') && file_exists($emailFormScript)) {
+        require_once $emailFormScript;
         $form = new PHP_Email_Form();
         $form->to = (string) getenv('CONTACT_TO');
         $form->from_name = 'Kennedy Cheroben Portfolio';

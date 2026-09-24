@@ -40,7 +40,7 @@ $projectUrl = safe_external_url($project['project_url'] ?? null);
   <section class="shell project-visual-container">
     <div class="project-visual-card">
       <div class="project-visual-canvas">
-        <img src="<?= e(project_image_url($project['image_url'] ?? null)) ?>" width="1400" height="900" alt="<?= e($project['title']) ?> project presentation">
+        <img src="<?= e(project_image_url($project['image_url'] ?? null)) ?>" width="1400" height="900" alt="<?= e($project['title']) ?> project presentation" onerror="this.onerror=null;this.src='<?= e(site_url('assets/img/cheroben_logo.webp')) ?>';">
       </div>
     </div>
   </section>

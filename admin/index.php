@@ -1,7 +1,7 @@
 <?php
-require_once '../includes/auth.php';
+require_once __DIR__ . '/../includes/auth.php';
 requireAdmin();
-require_once '../includes/db.php';
+require_once __DIR__ . '/../includes/db.php';
 
 $projectCount = $pdo->query('SELECT COUNT(*) FROM projects')->fetchColumn();
 $userCount = $pdo->query('SELECT COUNT(*) FROM users')->fetchColumn();
@@ -16,9 +16,12 @@ $recentProjects = $pdo->query('SELECT * FROM projects ORDER BY created_at DESC L
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Admin Dashboard - Portfolio</title>
-  <link href="../assets/vendor/bootstrap/css/bootstrap.min.css" rel="stylesheet">
-  <link href="../assets/vendor/bootstrap-icons/bootstrap-icons.min.css" rel="stylesheet">
-  <link href="../assets/css/main.css?v=1.0.1" rel="stylesheet">
+  <link rel="icon" type="image/x-icon" href="../favicon.ico">
+  <link rel="icon" type="image/webp" href="../assets/img/cheroben_logo.webp">
+  <link rel="apple-touch-icon" href="../assets/img/cheroben_logo.webp">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="../assets/css/main.css?v=20260911_2" rel="stylesheet">
   <style>
     .admin-body {
       background: var(--background-color);
