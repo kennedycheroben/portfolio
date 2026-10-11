@@ -24,7 +24,7 @@ $canonical = site_url($pagePath);
   <link rel="apple-touch-icon" href="<?= e(site_url('assets/img/cheroben_logo.webp')) ?>">
   <script>document.documentElement.classList.add('js')</script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
-  <link rel="stylesheet" href="<?= e(site_url('assets/css/main.css?v=20260911_2')) ?>">
+  <link rel="stylesheet" href="<?= e(site_url('assets/css/main.css?v=20261011_1')) ?>">
 <?php if (!str_starts_with($pagePath, 'admin/')): ?>
   <link rel="preload" as="image" type="image/webp" href="<?= e(site_url('assets/img/hero-video-poster.webp')) ?>">
   <script type="application/ld+json"><?= json_encode(['@context' => 'https://schema.org', '@type' => 'Person', 'name' => 'Kennedy Cheroben', 'url' => site_url(''), 'jobTitle' => 'Full-Stack Developer and UI/UX Designer', 'address' => ['@type' => 'PostalAddress', 'addressLocality' => 'Nairobi', 'addressCountry' => 'KE']], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?></script>

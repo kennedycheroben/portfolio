@@ -36,7 +36,16 @@ require __DIR__ . '/includes/header.php';
 $projectUrl = safe_external_url($project['project_url'] ?? null);
 ?>
 <main id="main-content">
-  <header class="project-hero shell"><a class="back-link" href="portfolio.php"><i class="bi bi-arrow-left"></i> All work</a><p class="eyebrow"><?= e(ucwords(str_replace('-', ' ', (string) $project['category']))) ?></p><h1><?= e($project['title']) ?></h1><div class="project-facts"><?php if ($project['client']): ?><div><span>Client</span><strong><?= e($project['client']) ?></strong></div><?php endif; ?><?php if ($project['date']): ?><div><span>Date</span><strong><?= e(date('Y', strtotime((string) $project['date']))) ?></strong></div><?php endif; ?><?php if ($projectUrl): ?><a class="button" href="<?= e($projectUrl) ?>" target="_blank" rel="noopener noreferrer">Visit project <i class="bi bi-arrow-up-right"></i></a><?php endif; ?></div></header>
+  <header class="project-hero shell">
+    <a class="back-link" href="portfolio.php"><i class="bi bi-arrow-left"></i> All work</a>
+    <p class="eyebrow"><?= e(ucwords(str_replace('-', ' ', (string) $project['category']))) ?></p>
+    <h1><?= e($project['title']) ?></h1>
+    <div class="project-facts">
+      <?php if ($project['client']): ?><div><span>Client</span><strong><?= e($project['client']) ?></strong></div><?php endif; ?>
+      <?php if ($project['date']): ?><div><span>Date</span><strong><?= e(date('Y', strtotime((string) $project['date']))) ?></strong></div><?php endif; ?>
+      <?php if ($projectUrl): ?><a class="button" href="<?= e($projectUrl) ?>" target="_blank" rel="noopener noreferrer">Visit project <i class="bi bi-arrow-up-right"></i></a><?php endif; ?>
+    </div>
+  </header>
   <section class="shell project-visual-container">
     <div class="project-visual-card">
       <div class="project-visual-canvas">
@@ -44,6 +53,15 @@ $projectUrl = safe_external_url($project['project_url'] ?? null);
       </div>
     </div>
   </section>
-  <section class="section-pad"><div class="shell project-narrative"><p class="section-index">Project overview</p><div><h2>The recorded brief</h2><p class="large-copy"><?= nl2br(e($project['description'])) ?></p><p class="content-note">More detail on the challenge, process, stack and verified results can be added from the project dashboard when available.</p></div></div></section>
+  <section class="section-pad">
+    <div class="shell project-narrative">
+      <p class="section-index">Project overview</p>
+      <div>
+        <h2>The recorded brief</h2>
+        <p class="large-copy"><?= nl2br(e($project['description'])) ?></p>
+        <p class="content-note">More detail on the challenge, process, stack and verified results can be added from the project dashboard when available.</p>
+      </div>
+    </div>
+  </section>
 </main>
 <?php require __DIR__ . '/includes/footer.php'; ?>

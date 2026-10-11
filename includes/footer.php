@@ -9,7 +9,7 @@
   </div>
   <div class="shell footer-bottom"><span>&copy; <?= date('Y') ?> Kennedy Cheroben</span><a href="#top">Back to top <i class="bi bi-arrow-up" aria-hidden="true"></i></a></div>
 </footer>
-<script src="<?= e(site_url('assets/js/main.js?v=20260911')) ?>" defer></script>
-<script src="<?= e(site_url('assets/js/scroll-video-controller.js?v=20260821')) ?>" defer></script>
+<script src="<?= e(site_url('assets/js/main.js?v=20261011')) ?>" defer></script>
+<script src="<?= e(site_url('assets/js/scroll-video-controller.js?v=20261011')) ?>" defer></script>
 </body>
 </html>
