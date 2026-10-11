@@ -1,6 +1,6 @@
 <?php
-$pageTitle = 'Kennedy Cheroben — Full-Stack Developer & UI/UX Designer';
-$pageDescription = 'I design and build secure, useful digital products from Nairobi, Kenya.';
+$pageTitle = 'Kennedy Cheroben — Visual Design Specialist & Developer';
+$pageDescription = 'Visual design specialist and developer crafting digital products from Nairobi, Kenya. 50+ projects, 2+ years experience.';
 $pagePath = 'index.php';
 $bodyClass = 'home-page';
 require __DIR__ . '/includes/head.php';
@@ -11,7 +11,7 @@ require __DIR__ . '/includes/header.php';
   <section class="sequence-hero" aria-labelledby="hero-title">
     <div class="sequence-sticky">
       <div class="shell hero-content">
-        <p class="eyebrow">Full-Stack Developer <span>·</span> UI/UX Designer <span>·</span> Nairobi, Kenya</p>
+        <p class="eyebrow">Visual Design Specialist <span>·</span> Developer <span>·</span> Nairobi, Kenya</p>
         <h1 id="hero-title">I design and build digital products that work <em>beautifully.</em></h1>
         <p class="hero-lead">Product-minded design, secure PHP development and careful frontend craft—brought together to make useful experiences for real people.</p>
         <div class="button-row"><a class="button" href="#selected-work">View my work <i class="bi bi-arrow-down" aria-hidden="true"></i></a><a class="text-link" href="contact.php">Start a project <i class="bi bi-arrow-up-right" aria-hidden="true"></i></a></div>
@@ -85,10 +85,6 @@ require __DIR__ . '/includes/header.php';
           <div class="stat-label">Years experience</div>
         </article>
         <article class="stat-card">
-          <div class="stat-value">100%</div>
-          <div class="stat-label">Client satisfaction</div>
-        </article>
-        <article class="stat-card">
           <div class="stat-value">Kenya</div>
           <div class="stat-label">Based in Nairobi</div>
         </article>
@@ -103,10 +99,10 @@ require __DIR__ . '/includes/header.php';
     </div>
     <div class="shell project-grid" id="selected-work">
       <article class="project-card reveal">
-        <div class="project-image">
+        <a class="project-image" href="https://jdmkenya.com" target="_blank" rel="noopener noreferrer">
           <img src="assets/img/portfolio/jdm_logo.webp" width="900" height="620" loading="lazy" alt="JDM Kenya project preview">
           <span class="project-arrow"><i class="bi bi-arrow-up-right"></i></span>
-        </div>
+        </a>
         <div class="project-meta">
           <h3>JDM Kenya</h3>
           <p>A responsive church website with a practical backend and clear content structure.</p>
@@ -115,7 +111,6 @@ require __DIR__ . '/includes/header.php';
       <article class="project-card reveal">
         <div class="project-image">
           <img src="assets/img/portfolio/unifysocial.webp" width="900" height="620" loading="lazy" alt="MediaFusion project preview">
-          <span class="project-arrow"><i class="bi bi-arrow-up-right"></i></span>
         </div>
         <div class="project-meta">
           <h3>MediaFusion</h3>
@@ -125,7 +120,6 @@ require __DIR__ . '/includes/header.php';
       <article class="project-card reveal">
         <div class="project-image">
           <img src="assets/img/portfolio/bizintel.webp" width="900" height="620" loading="lazy" alt="BizIntel project preview">
-          <span class="project-arrow"><i class="bi bi-arrow-up-right"></i></span>
         </div>
         <div class="project-meta">
           <h3>BizIntel</h3>
