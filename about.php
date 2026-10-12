@@ -1,6 +1,6 @@
 <?php
-$pageTitle = 'About Kennedy Cheroben — Developer & Designer';
-$pageDescription = 'Learn about Kennedy Cheroben, a full-stack developer and UI/UX designer based in Nairobi, Kenya.';
+$pageTitle = 'About Kennedy Cheroben — Visual Design Specialist & Full-Stack Developer';
+$pageDescription = 'Learn about Kennedy Cheroben, a visual design specialist and full-stack developer based in Nairobi, Kenya.';
 $pagePath = 'about.php';
 $bodyClass = 'about-page';
 require __DIR__ . '/includes/head.php';
@@ -18,7 +18,7 @@ require __DIR__ . '/includes/header.php';
         <img src="assets/img/profile-img.webp" width="900" height="1100" alt="Kennedy Cheroben" fetchpriority="high">
       </div>
       <div class="story-copy reveal">
-        <p class="large-copy">I'm Kennedy Cheroben, a full-stack developer and UI/UX designer based in Nairobi, Kenya.</p>
+        <p class="large-copy">I'm Kennedy Cheroben, a visual design specialist and full-stack developer based in Nairobi, Kenya.</p>
         <p>My work sits where thoughtful interfaces meet dependable engineering. I enjoy understanding the problem behind a brief, simplifying what feels complicated, and then building an experience that is clean, responsive and useful.</p>
         <p>Working across design and development gives me a practical view of the whole product—from information structure and interaction details to PHP, databases, performance and security.</p>
         <a class="button" href="contact.php">Work with me <i class="bi bi-arrow-up-right"></i></a>
@@ -57,7 +57,7 @@ require __DIR__ . '/includes/header.php';
       </div>
       <div class="stats-grid reveal">
         <article class="stat-card">
-          <div class="stat-value">50+</div>
+          <div class="stat-value">5+</div>
           <div class="stat-label">Projects completed</div>
         </article>
         <article class="stat-card">

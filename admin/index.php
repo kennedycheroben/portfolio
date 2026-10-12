@@ -24,116 +24,217 @@ $recentProjects = $pdo->query('SELECT * FROM projects ORDER BY created_at DESC L
   <link href="../assets/css/main.css?v=20261011_1" rel="stylesheet">
   <style>
     .admin-body {
-      background: var(--background-color);
+      background: var(--bg);
       min-height: 100vh;
+      color: var(--text);
     }
 
     .admin-sidebar {
-      background: var(--surface-color);
-      border-right: 1px solid color-mix(in srgb, var(--default-color), transparent 92%);
-      width: 250px;
+      background: var(--surface);
+      border-right: 1px solid var(--line);
+      width: 260px;
       position: fixed;
       top: 0;
       left: 0;
       height: 100vh;
-      padding: 24px 16px;
+      height: 100svh;
+      padding: 28px 20px;
       overflow-y: auto;
+      z-index: 1000;
+      display: flex;
+      flex-direction: column;
     }
 
     .admin-sidebar .brand {
-      font-size: 20px;
+      font-size: var(--font-size-step-2);
       font-weight: 700;
-      color: var(--accent-color);
+      color: var(--accent);
       text-decoration: none;
-      display: block;
-      margin-bottom: 32px;
-    }
-
-    .admin-sidebar .nav-link {
-      color: var(--default-color);
-      padding: 10px 14px;
-      border-radius: 8px;
-      font-size: 14px;
       display: flex;
       align-items: center;
       gap: 10px;
-      transition: 0.2s;
+      margin-bottom: 36px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .admin-sidebar .brand i {
+      font-size: 1.4em;
+    }
+
+    .admin-sidebar .nav {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      flex: 1;
+    }
+
+    .admin-sidebar .nav-link {
+      color: var(--text-dim);
+      padding: 12px 16px;
+      border-radius: var(--radius-sm);
+      font-size: var(--font-size-step-1);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      transition: background var(--transition-fast), color var(--transition-fast);
       text-decoration: none;
+      border: 1px solid transparent;
     }
 
     .admin-sidebar .nav-link:hover,
     .admin-sidebar .nav-link.active {
-      background: color-mix(in srgb, var(--accent-color), transparent 85%);
-      color: var(--accent-color);
+      background: var(--glass);
+      border-color: var(--glass-border);
+      color: var(--accent);
     }
 
     .admin-sidebar .nav-link i {
-      font-size: 18px;
+      font-size: 1.2em;
+      width: 22px;
+      text-align: center;
+    }
+
+    .admin-sidebar .sign-out {
+      margin-top: auto;
+      padding-top: 20px;
+      border-top: 1px solid var(--line);
     }
 
     .admin-main {
-      margin-left: 250px;
-      padding: 32px;
+      margin-left: 260px;
+      padding: 40px;
+      min-height: 100vh;
     }
 
     .admin-main h1 {
-      font-size: 28px;
+      font-size: var(--font-size-step-4);
       font-weight: 600;
-      margin-bottom: 24px;
+      margin-bottom: 32px;
+      color: var(--text);
     }
 
     .stat-card {
-      background: var(--surface-color);
-      border: 1px solid color-mix(in srgb, var(--default-color), transparent 92%);
-      border-radius: 12px;
-      padding: 24px;
+      background: var(--glass);
+      border: 1px solid var(--glass-border);
+      border-radius: var(--radius);
+      padding: 28px 24px;
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      transition: transform var(--transition-base), box-shadow var(--transition-base), border-color var(--transition-base);
+    }
+
+    .stat-card:hover {
+      transform: translateY(-4px);
+      box-shadow: var(--glass-shadow-hover);
+      border-color: var(--glass-border-strong);
     }
 
     .stat-card .number {
-      font-size: 32px;
+      font-size: var(--font-size-step-5);
       font-weight: 700;
-      color: var(--accent-color);
+      color: var(--accent);
+      line-height: 1;
+      margin-bottom: 8px;
     }
 
     .stat-card .label {
-      font-size: 14px;
-      color: color-mix(in srgb, var(--default-color), transparent 30%);
+      font-size: var(--font-size-step-1);
+      color: var(--text-dim);
+      font-weight: 500;
     }
 
     .table {
-      color: var(--default-color);
-      font-size: 14px;
+      color: var(--text);
+      font-size: var(--font-size-step-1);
     }
 
     .table th {
-      border-color: color-mix(in srgb, var(--default-color), transparent 88%);
+      border-color: var(--line);
       font-weight: 600;
+      color: var(--text-dim);
+      font-size: var(--font-size-step-0);
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      padding: 16px 20px;
     }
 
     .table td {
-      border-color: color-mix(in srgb, var(--default-color), transparent 92%);
+      border-color: var(--line-soft);
       vertical-align: middle;
+      padding: 16px 20px;
+    }
+
+    .table tbody tr {
+      transition: background var(--transition-fast);
+    }
+
+    .table tbody tr:hover {
+      background: rgba(255, 255, 255, .02);
     }
 
     .badge-featured {
-      background: var(--accent-color);
+      background: var(--accent);
       color: var(--contrast-color);
-      font-size: 11px;
-      padding: 3px 8px;
-      border-radius: 4px;
+      font-size: var(--font-size-step-0);
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-weight: 600;
     }
 
     .btn-sm {
-      padding: 4px 12px;
-      font-size: 13px;
-      border-radius: 6px;
+      padding: 8px 16px;
+      font-size: var(--font-size-step-1);
+      border-radius: var(--radius-sm);
+    }
+
+    .btn-outline-light {
+      background: transparent;
+      border-color: var(--line);
+      color: var(--text);
+    }
+
+    .btn-outline-light:hover {
+      background: var(--glass);
+      border-color: var(--glass-border);
+      color: var(--accent);
+    }
+
+    .btn-accent {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+
+    .btn-accent:hover {
+      background: var(--accent-glow);
+      border-color: var(--accent-glow);
+      color: #fff;
+    }
+
+    .card {
+      background: var(--glass);
+      border: 1px solid var(--glass-border);
+      border-radius: var(--radius);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+    }
+
+    .card-header {
+      background: transparent;
+      border-bottom: 1px solid var(--line);
+      padding: 20px 24px;
+    }
+
+    .card-body {
+      padding: 24px;
     }
 
     /* Page entry animation */
     @keyframes fadeSlideUp {
       from {
         opacity: 0;
-        transform: translateY(30px);
+        transform: translateY(24px);
       }
 
       to {
@@ -142,34 +243,17 @@ $recentProjects = $pdo->query('SELECT * FROM projects ORDER BY created_at DESC L
       }
     }
 
-    .admin-main>* {
+    .admin-main > * {
       animation: fadeSlideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
       opacity: 0;
     }
 
-    .admin-main>*:nth-child(1) {
-      animation-delay: 0.05s;
-    }
-
-    .admin-main>*:nth-child(2) {
-      animation-delay: 0.1s;
-    }
-
-    .admin-main>*:nth-child(3) {
-      animation-delay: 0.15s;
-    }
-
-    .admin-main>*:nth-child(4) {
-      animation-delay: 0.2s;
-    }
-
-    .admin-main>*:nth-child(5) {
-      animation-delay: 0.25s;
-    }
-
-    .admin-main>*:nth-child(6) {
-      animation-delay: 0.3s;
-    }
+    .admin-main > *:nth-child(1) { animation-delay: 0.05s; }
+    .admin-main > *:nth-child(2) { animation-delay: 0.1s; }
+    .admin-main > *:nth-child(3) { animation-delay: 0.15s; }
+    .admin-main > *:nth-child(4) { animation-delay: 0.2s; }
+    .admin-main > *:nth-child(5) { animation-delay: 0.25s; }
+    .admin-main > *:nth-child(6) { animation-delay: 0.3s; }
 
     /* Sidebar nav link active glow */
     .admin-sidebar .nav-link.active {
@@ -181,34 +265,29 @@ $recentProjects = $pdo->query('SELECT * FROM projects ORDER BY created_at DESC L
       content: '';
       position: absolute;
       inset: 0;
-      background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--accent-color), transparent 70%), transparent);
+      background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--accent), transparent 70%), transparent);
       animation: shimmer 2.5s ease-in-out infinite;
     }
 
     @keyframes shimmer {
-      0% {
-        transform: translateX(-100%);
-      }
-
-      100% {
-        transform: translateX(100%);
-      }
+      0% { transform: translateX(-100%); }
+      100% { transform: translateX(100%); }
     }
 
     /* Mobile responsive */
     .sidebar-toggle {
       display: none;
       position: fixed;
-      top: 12px;
-      left: 12px;
+      top: 16px;
+      left: 16px;
       z-index: 1060;
-      background: var(--surface-color);
-      border: 1px solid color-mix(in srgb, var(--default-color), transparent 85%);
-      border-radius: 8px;
-      padding: 8px 10px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      padding: 10px 12px;
       cursor: pointer;
-      font-size: 22px;
-      color: var(--default-color);
+      font-size: 1.4rem;
+      color: var(--text);
       line-height: 1;
     }
 
@@ -217,22 +296,26 @@ $recentProjects = $pdo->query('SELECT * FROM projects ORDER BY created_at DESC L
       position: fixed;
       inset: 0;
       z-index: 1040;
-      background: rgba(0, 0, 0, 0.4);
+      background: rgba(0, 0, 0, 0.5);
     }
 
     .sidebar-overlay.show {
       display: block;
     }
 
-    @media (max-width: 768px) {
+    @media (max-width: 980px) {
       .sidebar-toggle {
-        display: block;
+        display: flex;
+        align-items: center;
+        justify-content: center;
       }
 
       .admin-sidebar {
         transform: translateX(-100%);
         transition: transform 0.3s ease;
         z-index: 1050;
+        width: 280px;
+        max-width: 85vw;
       }
 
       .admin-sidebar.open {
@@ -241,11 +324,21 @@ $recentProjects = $pdo->query('SELECT * FROM projects ORDER BY created_at DESC L
 
       .admin-main {
         margin-left: 0;
-        padding: 70px 16px 24px;
+        padding: 80px 20px 32px;
       }
 
       .stat-card .number {
-        font-size: 26px;
+        font-size: var(--font-size-step-4);
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .admin-main > * {
+        animation: none;
+        opacity: 1;
+      }
+      .admin-sidebar .nav-link.active::before {
+        animation: none;
       }
     }
   </style>
@@ -258,16 +351,18 @@ $recentProjects = $pdo->query('SELECT * FROM projects ORDER BY created_at DESC L
 </head>
 
 <body class="admin-body">
-  <button class="sidebar-toggle" onclick="toggleSidebar()"><i class="bi bi-list"></i></button>
+  <button class="sidebar-toggle" onclick="toggleSidebar()" aria-label="Toggle navigation"><i class="bi bi-list"></i></button>
   <div class="sidebar-overlay" onclick="toggleSidebar()"></div>
   <div class="admin-sidebar">
     <a href="index.php" class="brand"><i class="bi bi-code-slash"></i> Portfolio</a>
-    <nav>
+    <nav class="nav" aria-label="Admin navigation">
       <a href="index.php" class="nav-link active"><i class="bi bi-speedometer2"></i> Dashboard</a>
       <a href="projects.php" class="nav-link"><i class="bi bi-folder"></i> Projects</a>
       <a href="messages.php" class="nav-link"><i class="bi bi-envelope"></i> Messages</a>
       <a href="../index.php" class="nav-link"><i class="bi bi-box-arrow-up-right"></i> View Site</a>
-      <form action="../logout.php" method="post"><?= csrf_field() ?><button type="submit" class="nav-link border-0 bg-transparent w-100"><i class="bi bi-box-arrow-right"></i> Sign Out</button></form>
+      <div class="sign-out">
+        <form action="../logout.php" method="post"><?= csrf_field() ?><button type="submit" class="nav-link border-0 bg-transparent w-100 text-start"><i class="bi bi-box-arrow-right"></i> Sign Out</button></form>
+      </div>
     </nav>
   </div>
 
@@ -301,37 +396,47 @@ $recentProjects = $pdo->query('SELECT * FROM projects ORDER BY created_at DESC L
       </div>
     </div>
 
-    <div class="stat-card p-0 overflow-hidden">
-      <div class="p-3" style="border-bottom:1px solid color-mix(in srgb, var(--default-color), transparent 92%);">
-        <strong>Recent Projects</strong>
+    <div class="card">
+      <div class="card-header">
+        <div class="d-flex justify-content-between align-items-center">
+          <strong>Recent Projects</strong>
+          <a href="projects-add.php" class="btn btn-accent btn-sm"><i class="bi bi-plus-lg"></i> Add Project</a>
+        </div>
       </div>
-      <div class="p-3 table-responsive">
+      <div class="card-body p-0">
         <?php if (empty($recentProjects)): ?>
-          <p class="mb-0" style="color:color-mix(in srgb, var(--default-color), transparent 40%);">No projects yet. <a
-              href="projects-add.php" style="color:var(--accent-color);">Add your first project</a>.</p>
+          <div class="p-4 text-center">
+            <p class="mb-2" style="color: var(--text-dim);">No projects yet.</p>
+            <a href="projects-add.php" class="btn btn-accent btn-sm"><i class="bi bi-plus-lg"></i> Add your first project</a>
+          </div>
         <?php else: ?>
-          <table class="table table-borderless mb-0">
-            <thead>
-              <tr>
-                <th>Title</th>
-                <th>Category</th>
-                <th>Featured</th>
-                <th>Date</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              <?php foreach ($recentProjects as $p): ?>
+          <div class="table-responsive">
+            <table class="table table-borderless mb-0">
+              <thead>
                 <tr>
-                  <td><?= htmlspecialchars($p['title']) ?></td>
-                  <td><?= htmlspecialchars($p['category']) ?></td>
-                  <td><?= $p['featured'] ? '<span class="badge-featured">Featured</span>' : '—' ?></td>
-                  <td><?= $p['date'] ? date('M j, Y', strtotime($p['date'])) : '—' ?></td>
-                  <td><a href="projects-edit.php?id=<?= $p['id'] ?>" class="btn btn-outline-light btn-sm">Edit</a></td>
+                  <th>Title</th>
+                  <th>Category</th>
+                  <th>Featured</th>
+                  <th>Date</th>
+                  <th></th>
                 </tr>
-              <?php endforeach; ?>
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                <?php foreach ($recentProjects as $p): ?>
+                  <tr>
+                    <td><strong><?= htmlspecialchars($p['title']) ?></strong></td>
+                    <td><?= htmlspecialchars($p['category']) ?></td>
+                    <td><?= $p['featured'] ? '<span class="badge-featured">Featured</span>' : '<span style="color:var(--text-dim);">—</span>' ?></td>
+                    <td><?= $p['date'] ? date('M j, Y', strtotime($p['date'])) : '<span style="color:var(--text-dim);">—</span>' ?></td>
+                    <td><a href="projects-edit.php?id=<?= $p['id'] ?>" class="btn btn-outline-light btn-sm"><i class="bi bi-pencil"></i> Edit</a></td>
+                  </tr>
+                <?php endforeach; ?>
+              </tbody>
+            </table>
+          </div>
+          <div class="text-center p-3" style="border-top: 1px solid var(--line);">
+            <a href="projects.php" class="text-link"><i class="bi bi-arrow-right"></i> View all projects</a>
+          </div>
         <?php endif; ?>
       </div>
     </div>

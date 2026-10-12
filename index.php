@@ -1,6 +1,6 @@
 <?php
-$pageTitle = 'Kennedy Cheroben — Visual Design Specialist & Developer';
-$pageDescription = 'Visual design specialist and developer crafting digital products from Nairobi, Kenya. 50+ projects, 2+ years experience.';
+$pageTitle = 'Kennedy Cheroben — Visual Design Specialist & Full-Stack Developer';
+$pageDescription = 'Visual design specialist and full-stack developer crafting digital products from Nairobi, Kenya. 5+ projects, 2+ years experience.';
 $pagePath = 'index.php';
 $bodyClass = 'home-page';
 require __DIR__ . '/includes/head.php';
@@ -11,7 +11,7 @@ require __DIR__ . '/includes/header.php';
   <section class="sequence-hero" aria-labelledby="hero-title">
     <div class="sequence-sticky">
       <div class="shell hero-content">
-        <p class="eyebrow">Visual Design Specialist <span>·</span> Developer <span>·</span> Nairobi, Kenya</p>
+        <p class="eyebrow">Visual Design Specialist <span>·</span> Full-Stack Developer <span>·</span> Nairobi, Kenya</p>
         <h1 id="hero-title">I design and build digital products that work <em>beautifully.</em></h1>
         <p class="hero-lead">Product-minded design, secure PHP development and careful frontend craft—brought together to make useful experiences for real people.</p>
         <div class="button-row"><a class="button" href="#selected-work">View my work <i class="bi bi-arrow-down" aria-hidden="true"></i></a><a class="text-link" href="contact.php">Start a project <i class="bi bi-arrow-up-right" aria-hidden="true"></i></a></div>
@@ -25,31 +25,43 @@ require __DIR__ . '/includes/header.php';
       <p class="section-index">01 / Introduction</p>
       <div><h2>Design thinking.<br>Engineering discipline.</h2><p class="large-copy">I'm Kennedy, a developer and designer focused on turning complex ideas into clear, responsive and maintainable digital products.</p></div>
     </div>
-    <div class="shell tech-marquee" aria-label="Core technologies" tabindex="0">
-      <div class="tech-marquee-track">
-        <div class="tech-marquee-group">
-          <span class="tech-pill">PHP 8+</span><span class="tech-dot" aria-hidden="true">·</span>
-          <span class="tech-pill">MySQL</span><span class="tech-dot" aria-hidden="true">·</span>
-          <span class="tech-pill">JavaScript (ES6+)</span><span class="tech-dot" aria-hidden="true">·</span>
-          <span class="tech-pill">HTML5</span><span class="tech-dot" aria-hidden="true">·</span>
-          <span class="tech-pill">CSS3</span><span class="tech-dot" aria-hidden="true">·</span>
-          <span class="tech-pill">Bootstrap 5</span><span class="tech-dot" aria-hidden="true">·</span>
-          <span class="tech-pill">UI/UX Design</span><span class="tech-dot" aria-hidden="true">·</span>
-          <span class="tech-pill">REST APIs</span><span class="tech-dot" aria-hidden="true">·</span>
-          <span class="tech-pill">Git & CI/CD</span><span class="tech-dot" aria-hidden="true">·</span>
-          <span class="tech-pill">Figma</span>
+    <div class="shell skills-marquee" aria-label="Core technologies" tabindex="0">
+      <div class="skills-marquee-track">
+        <div class="skills-marquee-group">
+          <span class="skill-pill" data-category="language">PHP 8+</span>
+          <span class="skill-pill" data-category="language">TypeScript</span>
+          <span class="skill-pill" data-category="language">JavaScript (ES6+)</span>
+          <span class="skill-pill" data-category="language">Python</span>
+          <span class="skill-pill" data-category="database">MySQL</span>
+          <span class="skill-pill" data-category="frontend">React</span>
+          <span class="skill-pill" data-category="frontend">Tailwind CSS</span>
+          <span class="skill-pill" data-category="frontend">shadcn/ui</span>
+          <span class="skill-pill" data-category="frontend">Bootstrap 5</span>
+          <span class="skill-pill" data-category="design">Figma</span>
+          <span class="skill-pill" data-category="backend">REST APIs</span>
+          <span class="skill-pill" data-category="backend">OAuth 2.0</span>
+          <span class="skill-pill" data-category="devops">Git & CI/CD</span>
+          <span class="skill-pill" data-category="devops">Vercel</span>
+          <span class="skill-pill" data-category="testing">Vitest</span>
+          <span class="skill-pill" data-category="testing">PHPUnit</span>
         </div>
-        <div class="tech-marquee-group" aria-hidden="true">
-          <span class="tech-pill">PHP 8+</span><span class="tech-dot" aria-hidden="true">·</span>
-          <span class="tech-pill">MySQL</span><span class="tech-dot" aria-hidden="true">·</span>
-          <span class="tech-pill">JavaScript (ES6+)</span><span class="tech-dot" aria-hidden="true">·</span>
-          <span class="tech-pill">HTML5</span><span class="tech-dot" aria-hidden="true">·</span>
-          <span class="tech-pill">CSS3</span><span class="tech-dot" aria-hidden="true">·</span>
-          <span class="tech-pill">Bootstrap 5</span><span class="tech-dot" aria-hidden="true">·</span>
-          <span class="tech-pill">UI/UX Design</span><span class="tech-dot" aria-hidden="true">·</span>
-          <span class="tech-pill">REST APIs</span><span class="tech-dot" aria-hidden="true">·</span>
-          <span class="tech-pill">Git & CI/CD</span><span class="tech-dot" aria-hidden="true">·</span>
-          <span class="tech-pill">Figma</span>
+        <div class="skills-marquee-group" aria-hidden="true">
+          <span class="skill-pill" data-category="language">PHP 8+</span>
+          <span class="skill-pill" data-category="language">TypeScript</span>
+          <span class="skill-pill" data-category="language">JavaScript (ES6+)</span>
+          <span class="skill-pill" data-category="language">Python</span>
+          <span class="skill-pill" data-category="database">MySQL</span>
+          <span class="skill-pill" data-category="frontend">React</span>
+          <span class="skill-pill" data-category="frontend">Tailwind CSS</span>
+          <span class="skill-pill" data-category="frontend">shadcn/ui</span>
+          <span class="skill-pill" data-category="frontend">Bootstrap 5</span>
+          <span class="skill-pill" data-category="design">Figma</span>
+          <span class="skill-pill" data-category="backend">REST APIs</span>
+          <span class="skill-pill" data-category="backend">OAuth 2.0</span>
+          <span class="skill-pill" data-category="devops">Git & CI/CD</span>
+          <span class="skill-pill" data-category="devops">Vercel</span>
+          <span class="skill-pill" data-category="testing">Vitest</span>
+          <span class="skill-pill" data-category="testing">PHPUnit</span>
         </div>
       </div>
     </div>
@@ -77,7 +89,7 @@ require __DIR__ . '/includes/header.php';
       </div>
       <div class="stats-grid reveal">
         <article class="stat-card">
-          <div class="stat-value">50+</div>
+          <div class="stat-value">5+</div>
           <div class="stat-label">Projects delivered</div>
         </article>
         <article class="stat-card">
@@ -114,16 +126,16 @@ require __DIR__ . '/includes/header.php';
         </div>
         <div class="project-meta">
           <h3>MediaFusion</h3>
-          <p>A social media content management product, formerly presented as Unify Social.</p>
+          <p>A social media content management product with OAuth integrations and automated distribution.</p>
         </div>
       </article>
       <article class="project-card reveal">
         <div class="project-image">
-          <img src="assets/img/portfolio/bizintel.webp" width="900" height="620" loading="lazy" alt="BizIntel project preview">
+          <img src="assets/img/portfolio/bizintel.webp" width="900" height="620" loading="lazy" alt="Benchero project preview">
         </div>
         <div class="project-meta">
-          <h3>BizIntel</h3>
-          <p>A business management and data analytics platform concept.</p>
+          <h3>Benchero</h3>
+          <p>A multi-sport club and team management platform with role-based access and real-time features.</p>
         </div>
       </article>
     </div>

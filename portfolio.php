@@ -13,14 +13,6 @@ if ($pdo instanceof PDO) {
         error_log('Portfolio project listing failed: ' . $exception->getMessage());
     }
 }
-
-if (!$projects) {
-    $projects = [
-        ['id' => null, 'title' => 'JDM Kenya', 'description' => 'A responsive church website with a practical backend and clear content structure.', 'category' => 'web-design', 'image_url' => 'assets/img/portfolio/jdm_logo.webp', 'project_url' => 'https://jdmkenya.com', 'client' => '', 'date' => null, 'featured' => 1],
-        ['id' => null, 'title' => 'MediaFusion', 'description' => 'A social media content management product, formerly presented as Unify Social.', 'category' => 'software-development', 'image_url' => 'assets/img/portfolio/unifysocial.webp', 'project_url' => '', 'client' => '', 'date' => null, 'featured' => 1],
-        ['id' => null, 'title' => 'BizIntel', 'description' => 'A business management and data analytics platform concept.', 'category' => 'software-development', 'image_url' => 'assets/img/portfolio/bizintel.webp', 'project_url' => '', 'client' => '', 'date' => null, 'featured' => 1],
-    ];
-}
 require __DIR__ . '/includes/head.php';
 $activePage = 'portfolio';
 require __DIR__ . '/includes/header.php';
