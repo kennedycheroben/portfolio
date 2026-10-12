@@ -21,7 +21,7 @@ $recentProjects = $pdo->query('SELECT * FROM projects ORDER BY created_at DESC L
   <link rel="apple-touch-icon" href="../assets/img/cheroben_logo.webp">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
-  <link href="../assets/css/main.css?v=20260911_2" rel="stylesheet">
+  <link href="../assets/css/main.css?v=20261011_1" rel="stylesheet">
   <style>
     .admin-body {
       background: var(--background-color);

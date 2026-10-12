@@ -64,7 +64,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   <link rel="apple-touch-icon" href="../assets/img/cheroben_logo.webp">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
-  <link href="../assets/css/main.css?v=20260911_2" rel="stylesheet">
+  <link href="../assets/css/main.css?v=20261011_1" rel="stylesheet">
   <style>
     .admin-body { background: var(--background-color); min-height: 100vh; }
     .admin-sidebar { background: var(--surface-color); border-right: 1px solid color-mix(in srgb, var(--default-color), transparent 92%); width: 250px; position: fixed; top: 0; left: 0; height: 100vh; padding: 24px 16px; overflow-y: auto; }

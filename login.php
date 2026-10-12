@@ -57,7 +57,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   <link rel="icon" type="image/webp" href="<?= e(site_url('assets/img/cheroben_logo.webp')) ?>">
   <link rel="apple-touch-icon" href="<?= e(site_url('assets/img/cheroben_logo.webp')) ?>">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
-  <link rel="stylesheet" href="<?= e(site_url('assets/css/main.css?v=20260911_2')) ?>">
+  <link rel="stylesheet" href="<?= e(site_url('assets/css/main.css?v=20261011_1')) ?>">
 </head>
 <body class="auth-page">
   <main class="auth-card">
