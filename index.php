@@ -3,6 +3,19 @@ $pageTitle = 'Kennedy Cheroben — Visual Design Specialist & Full-Stack Develop
 $pageDescription = 'Visual design specialist and full-stack developer crafting digital products from Nairobi, Kenya. 5+ projects, 2+ years experience.';
 $pagePath = 'index.php';
 $bodyClass = 'home-page';
+
+define('DB_OPTIONAL', true);
+require_once __DIR__ . '/includes/db.php';
+
+$featuredProjects = [];
+if ($pdo instanceof PDO) {
+    try {
+        $featuredProjects = $pdo->query('SELECT id, title, description, category, image_url, project_url, client, date FROM projects WHERE featured = 1 ORDER BY created_at DESC LIMIT 3')->fetchAll();
+    } catch (PDOException $exception) {
+        error_log('Featured projects query failed: ' . $exception->getMessage());
+    }
+}
+
 require __DIR__ . '/includes/head.php';
 $activePage = 'home';
 require __DIR__ . '/includes/header.php';
@@ -110,34 +123,28 @@ require __DIR__ . '/includes/header.php';
       <p style="max-width: 720px; color: var(--text-dim);">A selection of design and development work. Visit the portfolio for the full collection.</p>
     </div>
     <div class="shell project-grid" id="selected-work">
-      <article class="project-card reveal">
-        <a class="project-image" href="https://jdmkenya.com" target="_blank" rel="noopener noreferrer">
-          <img src="assets/img/portfolio/jdm_logo.webp" width="900" height="620" loading="lazy" alt="JDM Kenya project preview">
-          <span class="project-arrow"><i class="bi bi-arrow-up-right"></i></span>
-        </a>
-        <div class="project-meta">
-          <h3>JDM Kenya</h3>
-          <p>A responsive church website with a practical backend and clear content structure.</p>
+      <?php if (empty($featuredProjects)): ?>
+        <div class="shell empty-state" style="grid-column: 1 / -1; text-align: center;">
+          <p style="color: var(--text-dim);">No featured projects yet. <a href="portfolio.php" class="text-link">View all work <i class="bi bi-arrow-right"></i></a></p>
         </div>
-      </article>
-      <article class="project-card reveal">
-        <div class="project-image">
-          <img src="assets/img/portfolio/unifysocial.webp" width="900" height="620" loading="lazy" alt="MediaFusion project preview">
-        </div>
-        <div class="project-meta">
-          <h3>MediaFusion</h3>
-          <p>A social media content management product with OAuth integrations and automated distribution.</p>
-        </div>
-      </article>
-      <article class="project-card reveal">
-        <div class="project-image">
-          <img src="assets/img/portfolio/bizintel.webp" width="900" height="620" loading="lazy" alt="Benchero project preview">
-        </div>
-        <div class="project-meta">
-          <h3>Benchero</h3>
-          <p>A multi-sport club and team management platform with role-based access and real-time features.</p>
-        </div>
-      </article>
+      <?php else: ?>
+        <?php foreach ($featuredProjects as $project): ?>
+          <?php
+            $image = project_image_url($project['image_url'] ?? null);
+            $detailUrl = $project['id'] ? 'portfolio-details.php?id=' . (int) $project['id'] : safe_external_url($project['project_url'] ?? null);
+          ?>
+          <article class="project-card reveal">
+            <?php if ($detailUrl): ?><a class="project-image" href="<?= e($detailUrl) ?>" <?= str_starts_with($detailUrl, 'http') ? 'target="_blank" rel="noopener noreferrer"' : '' ?>><?php else: ?><div class="project-image"><?php endif; ?>
+              <img src="<?= e($image) ?>" width="900" height="620" loading="lazy" alt="<?= e($project['title']) ?> project preview" onerror="this.onerror=null;this.src='<?= e(site_url('assets/img/cheroben_logo.webp')) ?>';">
+              <?php if ($detailUrl): ?><span class="project-arrow"><i class="bi bi-arrow-up-right"></i></span><?php endif; ?>
+            <?= $detailUrl ? '</a>' : '</div>' ?>
+            <div class="project-meta">
+              <h3><?= e($project['title']) ?></h3>
+              <p><?= e(text_excerpt((string) $project['description'], 180)) ?></p>
+            </div>
+          </article>
+        <?php endforeach; ?>
+      <?php endif; ?>
     </div>
     <div class="shell" style="text-align: center; margin-top: 40px;">
       <a class="button" href="portfolio.php">View all projects <i class="bi bi-arrow-right"></i></a>
