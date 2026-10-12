@@ -56,7 +56,6 @@ require __DIR__ . '/includes/header.php';
           <span class="skill-pill" data-category="devops">Git & CI/CD</span>
           <span class="skill-pill" data-category="devops">Vercel</span>
           <span class="skill-pill" data-category="testing">Vitest</span>
-          <span class="skill-pill" data-category="testing">PHPUnit</span>
         </div>
         <div class="skills-marquee-group" aria-hidden="true">
           <span class="skill-pill" data-category="language">PHP 8+</span>
@@ -74,7 +73,6 @@ require __DIR__ . '/includes/header.php';
           <span class="skill-pill" data-category="devops">Git & CI/CD</span>
           <span class="skill-pill" data-category="devops">Vercel</span>
           <span class="skill-pill" data-category="testing">Vitest</span>
-          <span class="skill-pill" data-category="testing">PHPUnit</span>
         </div>
       </div>
     </div>
