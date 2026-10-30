@@ -26,8 +26,6 @@ $explicitEnvironmentFile = getenv('APP_ENV_FILE');
 if ($explicitEnvironmentFile) {
     $loadEnvironmentFile($explicitEnvironmentFile);
 } else {
+    $loadEnvironmentFile(dirname(__DIR__) . '/.env.local');
     $loadEnvironmentFile(dirname(__DIR__) . '/.env');
-    if (getenv('APP_ENV') !== 'production') {
-        $loadEnvironmentFile(dirname(__DIR__) . '/.env.local');
-    }
 }

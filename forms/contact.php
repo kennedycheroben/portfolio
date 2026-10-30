@@ -10,7 +10,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 verify_csrf();
-$startedAt = filter_input(INPUT_POST, 'started_at', FILTER_VALIDATE_INT);
+$startedAt = filter_input(INPUT_POST, 'started_at', FILTER_VALIDATE_INT) ?: (filter_var($_POST['started_at'] ?? null, FILTER_VALIDATE_INT) ?: null);
 if (input_string($_POST, 'website') !== '' || !$startedAt || time() - $startedAt < 3) {
     redirect(site_url('contact.php?status=sent'));
 }

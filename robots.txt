@@ -3,6 +3,8 @@ Allow: /
 Disallow: /admin/
 Disallow: /api/
 Disallow: /forms/
+Disallow: /includes/
+Disallow: /migrations/
 Disallow: /login.php
 Disallow: /register.php
 Disallow: /login-signup.php

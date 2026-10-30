@@ -53,24 +53,25 @@ require __DIR__ . '/includes/header.php';
   <section class="stats-section section-pad surface-section">
     <div class="shell">
       <div class="section-heading reveal" style="margin-bottom: 48px;">
-        <div><p class="eyebrow">Experience snapshot</p><h2>Years of building useful things.</h2></div>
+        <div><p class="eyebrow">Professional focus</p><h2>What I build & prioritize.</h2></div>
+        <p>A dependable, product-first approach to web engineering and visual design.</p>
       </div>
       <div class="stats-grid reveal">
         <article class="stat-card">
-          <div class="stat-value">5+</div>
-          <div class="stat-label">Projects completed</div>
+          <div class="stat-value">Full-Stack</div>
+          <div class="stat-label">Custom PHP 8+, PDO & MySQL web applications</div>
         </article>
         <article class="stat-card">
-          <div class="stat-value">2+</div>
-          <div class="stat-label">Years professional experience</div>
+          <div class="stat-value">UI/UX Craft</div>
+          <div class="stat-label">User flows, wireframes & Figma design systems</div>
         </article>
         <article class="stat-card">
-          <div class="stat-value">15+</div>
-          <div class="stat-label">Technologies in toolkit</div>
+          <div class="stat-value">Standards</div>
+          <div class="stat-label">WCAG 2.2 AA accessibility, SEO & performance</div>
         </article>
         <article class="stat-card">
           <div class="stat-value">Nairobi</div>
-          <div class="stat-label">Kenya-based</div>
+          <div class="stat-label">Based in Kenya · Working with clients worldwide</div>
         </article>
       </div>
     </div>

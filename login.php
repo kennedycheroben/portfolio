@@ -31,7 +31,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $statement = $pdo->prepare('SELECT id, username, email, password_hash, role FROM users WHERE username = ? OR email = ? LIMIT 1');
         $statement->execute([$identifier, $identifier]);
         $user = $statement->fetch();
-        if ($user && password_verify($password, $user['password_hash'])) {
+        $dummyHash = '$2y$10$JQ5oqMOQiGQKfsN.4Evj4u6TzwYnssRa2jylQ4h6s.8tE5.ZZXlWq';
+        $hash = is_array($user) && isset($user['password_hash']) ? (string) $user['password_hash'] : $dummyHash;
+        if ($user && password_verify($password, $hash)) {
             session_regenerate_id(true);
             $_SESSION['user_id'] = (int) $user['id'];
             $_SESSION['user_username'] = (string) $user['username'];
@@ -41,7 +43,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['last_activity'] = time();
             redirect($user['role'] === 'admin' ? site_url('admin/index.php') : site_url('index.php'));
         }
-        password_verify($password, '$2y$10$JQ5oqMOQiGQKfsN.4Evj4u6TzwYnssRa2jylQ4h6s.8tE5.ZZXlWq');
         $error = 'Unable to sign in with those details.';
     }
 }

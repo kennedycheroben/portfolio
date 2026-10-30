@@ -1,236 +1,259 @@
 <?php
+declare(strict_types=1);
+
 require_once __DIR__ . '/../includes/auth.php';
 requireAdmin();
 require_once __DIR__ . '/../includes/db.php';
 
-$id = filter_input(INPUT_GET, 'id', FILTER_VALIDATE_INT) ?: 0;
-$stmt = $pdo->prepare('SELECT * FROM projects WHERE id = ?');
+$id = filter_input(INPUT_GET, 'id', FILTER_VALIDATE_INT) ?: (filter_var($_GET['id'] ?? null, FILTER_VALIDATE_INT) ?: 0);
+$stmt = $pdo->prepare('SELECT * FROM projects WHERE id = ? LIMIT 1');
 $stmt->execute([$id]);
 $project = $stmt->fetch();
 
 if (!$project) {
-  header('Location: projects.php');
-  exit;
+    redirect('projects.php');
 }
 
 $error = '';
+$title = (string) $project['title'];
+$description = (string) ($project['description'] ?? '');
+$problem = (string) ($project['problem'] ?? '');
+$contribution = (string) ($project['contribution'] ?? '');
+$features = (string) ($project['features'] ?? '');
+$outcomes = (string) ($project['outcomes'] ?? '');
+$category = (string) ($project['category'] ?? 'web-design');
+$technologies = (string) ($project['technologies'] ?? '');
+$project_url = (string) ($project['project_url'] ?? '');
+$github_url = (string) ($project['github_url'] ?? '');
+$client = (string) ($project['client'] ?? '');
+$date = (string) ($project['date'] ?? '');
+$featured = (int) ($project['featured'] ?? 0);
+$status = (string) ($project['status'] ?? 'published');
+$image_url = (string) ($project['image_url'] ?? '');
+$video_url = (string) ($project['video_url'] ?? '');
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-  verify_csrf();
-  $title = input_string($_POST, 'title');
-  $description = input_string($_POST, 'description');
-  $category = input_string($_POST, 'category') ?: 'web-design';
-  $project_url = input_string($_POST, 'project_url');
-  $client = input_string($_POST, 'client');
-  $date = input_string($_POST, 'date');
-  $featured = isset($_POST['featured']) ? 1 : 0;
-  $image_url = input_string($_POST, 'image_url');
-  $video_url = input_string($_POST, 'video_url');
+    verify_csrf();
+    $title = input_string($_POST, 'title');
+    $description = input_string($_POST, 'description');
+    $problem = input_string($_POST, 'problem');
+    $contribution = input_string($_POST, 'contribution');
+    $features = input_string($_POST, 'features');
+    $outcomes = input_string($_POST, 'outcomes');
+    $category = input_string($_POST, 'category') ?: 'web-design';
+    $technologies = input_string($_POST, 'technologies');
+    $project_url = input_string($_POST, 'project_url');
+    $github_url = input_string($_POST, 'github_url');
+    $client = input_string($_POST, 'client');
+    $date = input_string($_POST, 'date');
+    $featured = isset($_POST['featured']) ? 1 : 0;
+    $status = input_string($_POST, 'status') === 'draft' ? 'draft' : 'published';
+    $image_url = input_string($_POST, 'image_url');
+    $video_url = input_string($_POST, 'video_url');
 
-  if ($image_url === '') {
-    $image_url = $project['image_url'];
-  }
-
-  $categories = ['web-design', 'software-development', 'mobile-app', 'branding', 'ui-ux', 'other'];
-  if ($title === '' || text_length($title) > 140) {
-    $error = 'Enter a title up to 140 characters.';
-  } elseif (text_length($description) > 5000 || text_length($client) > 140 || !in_array($category, $categories, true)) {
-    $error = 'Check the project details and category.';
-  } elseif (!valid_iso_date($date)) {
-    $error = 'Choose a valid project date.';
-  } elseif (($image_url !== '' && $image_url !== $project['image_url'] && !safe_external_url($image_url)) || ($video_url !== '' && !safe_external_url($video_url)) || ($project_url !== '' && !safe_external_url($project_url))) {
-    $error = 'URLs must use a valid HTTP or HTTPS address.';
-  } else {
-    if (isset($_FILES['image']) && $_FILES['image']['error'] !== UPLOAD_ERR_NO_FILE) {
-      try { $image_url = save_project_upload($_FILES['image']); } catch (RuntimeException $exception) { $error = $exception->getMessage(); }
+    if ($image_url === '') {
+        $image_url = (string) $project['image_url'];
     }
 
-    if (!$error) {
-      $stmt = $pdo->prepare('UPDATE projects SET title=?, description=?, category=?, image_url=?, video_url=?, project_url=?, client=?, date=?, featured=? WHERE id=?');
-      $stmt->execute([$title, $description, $category, $image_url, $video_url, $project_url, $client, $date ?: null, $featured, $id]);
-      redirect('projects.php?updated=1');
+    $categories = ['web-design', 'software-development', 'mobile-app', 'branding', 'ui-ux', 'other'];
+
+    if ($title === '' || text_length($title) > 140) {
+        $error = 'Enter a title up to 140 characters.';
+    } elseif (text_length($description) > 5000 || text_length($problem) > 5000 || text_length($contribution) > 5000 || text_length($features) > 5000 || text_length($outcomes) > 5000) {
+        $error = 'One or more text sections exceed the 5000 character limit.';
+    } elseif (text_length($client) > 140 || text_length($technologies) > 500) {
+        $error = 'Client or technologies exceed length limits.';
+    } elseif (!in_array($category, $categories, true)) {
+        $error = 'Choose a valid category.';
+    } elseif (!valid_iso_date($date)) {
+        $error = 'Choose a valid project date.';
+    } else {
+        if (($image_url !== '' && $image_url !== $project['image_url'] && !safe_external_url($image_url)) || ($video_url !== '' && !safe_external_url($video_url)) || ($project_url !== '' && !safe_external_url($project_url)) || ($github_url !== '' && !safe_external_url($github_url))) {
+            $error = 'All URLs must be valid HTTP or HTTPS addresses.';
+        }
+
+        if (!$error && isset($_FILES['image']) && $_FILES['image']['error'] !== UPLOAD_ERR_NO_FILE) {
+            try {
+                $image_url = save_project_upload($_FILES['image']);
+            } catch (RuntimeException $exception) {
+                $error = $exception->getMessage();
+            }
+        }
+
+        if (!$error) {
+            $stmt = $pdo->prepare('UPDATE projects SET
+                title = ?, description = ?, problem = ?, contribution = ?, features = ?, outcomes = ?,
+                category = ?, technologies = ?, image_url = ?, video_url = ?, project_url = ?, github_url = ?,
+                client = ?, date = ?, featured = ?, status = ?
+            WHERE id = ?');
+
+            $stmt->execute([
+                $title,
+                $description !== '' ? $description : null,
+                $problem !== '' ? $problem : null,
+                $contribution !== '' ? $contribution : null,
+                $features !== '' ? $features : null,
+                $outcomes !== '' ? $outcomes : null,
+                $category,
+                $technologies !== '' ? $technologies : null,
+                $image_url !== '' ? $image_url : null,
+                $video_url !== '' ? $video_url : null,
+                $project_url !== '' ? $project_url : null,
+                $github_url !== '' ? $github_url : null,
+                $client !== '' ? $client : null,
+                $date ?: null,
+                $featured,
+                $status,
+                $id
+            ]);
+            redirect('projects.php?updated=1');
+        }
     }
-  }
 }
+
+$adminPageTitle = 'Edit Project: ' . $project['title'];
+$adminActiveNav = 'projects';
+require __DIR__ . '/includes/admin-head.php';
+require __DIR__ . '/includes/admin-sidebar.php';
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Edit Project - Portfolio</title>
-  <link rel="icon" type="image/x-icon" href="../favicon.ico">
-  <link rel="icon" type="image/webp" href="../assets/img/cheroben_logo.webp">
-  <link rel="apple-touch-icon" href="../assets/img/cheroben_logo.webp">
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
-  <link href="../assets/css/main.css?v=20261011_1" rel="stylesheet">
-  <style>
-    .admin-body { background: var(--background-color); min-height: 100vh; }
-    .admin-sidebar { background: var(--surface-color); border-right: 1px solid color-mix(in srgb, var(--default-color), transparent 92%); width: 250px; position: fixed; top: 0; left: 0; height: 100vh; padding: 24px 16px; overflow-y: auto; }
-    .admin-sidebar .brand { font-size: 20px; font-weight: 700; color: var(--accent-color); text-decoration: none; display: block; margin-bottom: 32px; }
-    .admin-sidebar .nav-link { color: var(--default-color); padding: 10px 14px; border-radius: 8px; font-size: 14px; display: flex; align-items: center; gap: 10px; transition: 0.2s; text-decoration: none; }
-    .admin-sidebar .nav-link:hover, .admin-sidebar .nav-link.active { background: color-mix(in srgb, var(--accent-color), transparent 85%); color: var(--accent-color); }
-    .admin-sidebar .nav-link i { font-size: 18px; }
-    .admin-main { margin-left: 250px; padding: 32px; }
-    .admin-main h1 { font-size: 28px; font-weight: 600; margin-bottom: 24px; }
-    .form-card { background: var(--surface-color); border: 1px solid color-mix(in srgb, var(--default-color), transparent 92%); border-radius: 12px; padding: 32px; max-width: 720px; }
-    .form-card .form-control, .form-card .form-select { background: color-mix(in srgb, var(--surface-color), white 5%); border: 1px solid color-mix(in srgb, var(--default-color), transparent 85%); color: var(--default-color); padding: 10px 14px; border-radius: 8px; }
-    .form-card .form-control:focus, .form-card .form-select:focus { border-color: var(--accent-color); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-color), transparent 80%); }
-    .form-card .form-label { font-size: 14px; font-weight: 500; }
-    .form-card textarea.form-control { min-height: 120px; }
-    .form-card .btn-primary { background: var(--accent-color); border: none; padding: 10px 24px; border-radius: 8px; font-weight: 600; }
-    .form-card .btn-primary:hover { background: color-mix(in srgb, var(--accent-color), black 15%); }
-    .form-card .alert { border-radius: 8px; font-size: 14px; }
-    .form-card .preview-img { max-width: 200px; border-radius: 8px; margin-top: 8px; }
-    .form-check-input:checked { background-color: var(--accent-color); border-color: var(--accent-color); }
-    .form-check-input:focus { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-color), transparent 80%); border-color: var(--accent-color); }
-
-    /* Page entry animation */
-    @keyframes fadeSlideUp {
-      from { opacity: 0; transform: translateY(30px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-    .admin-main > * {
-      animation: fadeSlideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-      opacity: 0;
-    }
-    .admin-main > *:nth-child(1) { animation-delay: 0.05s; }
-    .admin-main > *:nth-child(2) { animation-delay: 0.1s; }
-    .admin-main > *:nth-child(3) { animation-delay: 0.15s; }
-    .admin-main > *:nth-child(4) { animation-delay: 0.2s; }
-    .admin-main > *:nth-child(5) { animation-delay: 0.25s; }
-    .admin-main > *:nth-child(6) { animation-delay: 0.3s; }
-
-    /* Sidebar nav link active glow */
-    .admin-sidebar .nav-link.active {
-      position: relative;
-      overflow: hidden;
-    }
-    .admin-sidebar .nav-link.active::before {
-      content: '';
-      position: absolute;
-      inset: 0;
-      background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--accent-color), transparent 70%), transparent);
-      animation: shimmer 2.5s ease-in-out infinite;
-    }
-    @keyframes shimmer {
-      0% { transform: translateX(-100%); }
-      100% { transform: translateX(100%); }
-    }
-
-    /* Mobile responsive */
-    .sidebar-toggle {
-      display: none;
-      position: fixed;
-      top: 12px;
-      left: 12px;
-      z-index: 1060;
-      background: var(--surface-color);
-      border: 1px solid color-mix(in srgb, var(--default-color), transparent 85%);
-      border-radius: 8px;
-      padding: 8px 10px;
-      cursor: pointer;
-      font-size: 22px;
-      color: var(--default-color);
-      line-height: 1;
-    }
-    .sidebar-overlay {
-      display: none;
-      position: fixed;
-      inset: 0;
-      z-index: 1040;
-      background: rgba(0,0,0,0.4);
-    }
-    .sidebar-overlay.show { display: block; }
-    @media (max-width: 768px) {
-      .sidebar-toggle { display: block; }
-      .admin-sidebar { transform: translateX(-100%); transition: transform 0.3s ease; z-index: 1050; }
-      .admin-sidebar.open { transform: translateX(0); }
-      .admin-main { margin-left: 0; padding: 70px 16px 24px; }
-    }
-  </style>
-  <script>function toggleSidebar(){document.querySelector('.admin-sidebar').classList.toggle('open');document.querySelector('.sidebar-overlay').classList.toggle('show')}</script>
-</head>
-<body class="admin-body">
-  <button class="sidebar-toggle" onclick="toggleSidebar()"><i class="bi bi-list"></i></button>
-  <div class="sidebar-overlay" onclick="toggleSidebar()"></div>
-  <div class="admin-sidebar">
-    <a href="index.php" class="brand"><i class="bi bi-code-slash"></i> Portfolio</a>
-    <nav>
-      <a href="index.php" class="nav-link"><i class="bi bi-speedometer2"></i> Dashboard</a>
-      <a href="projects.php" class="nav-link active"><i class="bi bi-folder"></i> Projects</a>
-      <a href="messages.php" class="nav-link"><i class="bi bi-envelope"></i> Messages</a>
-      <a href="../index.php" class="nav-link"><i class="bi bi-box-arrow-up-right"></i> View Site</a>
-      <form action="../logout.php" method="post"><?= csrf_field() ?><button type="submit" class="nav-link border-0 bg-transparent w-100"><i class="bi bi-box-arrow-right"></i> Sign Out</button></form>
-    </nav>
-  </div>
-
-  <div class="admin-main">
-    <a href="projects.php" class="text-decoration-none mb-3 d-inline-block" style="color:var(--accent-color);"><i class="bi bi-arrow-left"></i> Back to Projects</a>
-    <h1>Edit Project</h1>
-
-    <div class="form-card">
-      <?php if ($error): ?>
-        <div class="alert alert-danger"><?= htmlspecialchars($error) ?></div>
-      <?php endif; ?>
-
-      <form method="post" enctype="multipart/form-data">
-        <?= csrf_field() ?>
-        <div class="mb-3">
-          <label class="form-label">Title *</label>
-          <input type="text" name="title" class="form-control" maxlength="140" value="<?= e($project['title']) ?>" required>
-        </div>
-        <div class="mb-3">
-          <label class="form-label">Description</label>
-          <textarea name="description" class="form-control" maxlength="5000"><?= e($project['description']) ?></textarea>
-        </div>
-        <div class="row mb-3">
-          <div class="col-md-6">
-            <label class="form-label">Category</label>
-            <select name="category" class="form-select">
-              <?php foreach (['web-design' => 'Web Design', 'software-development' => 'Software Development', 'mobile-app' => 'Mobile App', 'branding' => 'Branding', 'ui-ux' => 'UI/UX Design', 'other' => 'Other'] as $val => $label): ?>
-                <option value="<?= $val ?>" <?= $project['category'] === $val ? 'selected' : '' ?>><?= $label ?></option>
-              <?php endforeach; ?>
-            </select>
-          </div>
-          <div class="col-md-6">
-            <label class="form-label">Project Date</label>
-            <input type="date" name="date" class="form-control" value="<?= htmlspecialchars($project['date'] ?? '') ?>">
-          </div>
-        </div>
-        <div class="mb-3">
-          <label class="form-label">Project URL</label>
-          <input type="url" name="project_url" class="form-control" value="<?= htmlspecialchars($project['project_url']) ?>" placeholder="https://...">
-        </div>
-        <div class="mb-3">
-          <label class="form-label">Client</label>
-          <input type="text" name="client" class="form-control" maxlength="140" value="<?= e($project['client']) ?>" placeholder="Client or organization name">
-        </div>
-        <div class="mb-3">
-          <label class="form-label">Project Image (File Upload)</label>
-          <input type="file" name="image" class="form-control" accept="image/jpeg,image/png,image/webp">
-          <?php if ($project['image_url']): ?>
-            <img src="<?= e(project_image_url($project['image_url'])) ?>" alt="" class="preview-img" loading="lazy" onerror="this.onerror=null;this.src='<?= e(site_url('assets/img/cheroben_logo.webp')) ?>';">
-          <?php endif; ?>
-        </div>
-        <div class="mb-3">
-          <label class="form-label">Or Image Cloud URL (S3/R2)</label>
-          <input type="url" name="image_url" class="form-control" value="<?= htmlspecialchars(str_starts_with($project['image_url'], 'http') ? $project['image_url'] : '') ?>" placeholder="https://bucket.r2.cloudflarestorage.com/image.png">
-        </div>
-        <div class="mb-3">
-          <label class="form-label">Project Video Cloud URL (S3/R2 for Reels feed)</label>
-          <input type="url" name="video_url" class="form-control" value="<?= htmlspecialchars($project['video_url'] ?? '') ?>" placeholder="https://bucket.r2.cloudflarestorage.com/video.mp4">
-        </div>
-        <div class="mb-4">
-          <div class="form-check">
-            <input type="checkbox" name="featured" id="featured" class="form-check-input" <?= $project['featured'] ? 'checked' : '' ?>>
-            <label for="featured" class="form-check-label">Mark as featured</label>
-          </div>
-        </div>
-        <button type="submit" class="btn btn-primary">Update Project</button>
-      </form>
+<main class="admin-main" id="main-content">
+  <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
+    <div>
+      <a href="projects.php" class="text-decoration-none mb-1 d-inline-block" style="color: var(--admin-accent); font-size: 0.875rem;"><i class="bi bi-arrow-left"></i> Back to projects</a>
+      <h1 class="mb-0">Edit Project</h1>
+    </div>
+    <div class="d-flex gap-2">
+      <a href="../portfolio-details.php?id=<?= (int) $id ?>" target="_blank" rel="noopener noreferrer" class="btn-admin-view"><i class="bi bi-box-arrow-up-right me-1"></i> Preview Project</a>
     </div>
   </div>
-</body>
-</html>
+
+  <?php if ($error): ?>
+    <div class="alert alert-danger" role="alert"><i class="bi bi-exclamation-triangle-fill me-2" aria-hidden="true"></i> <?= e($error) ?></div>
+  <?php endif; ?>
+
+  <div class="form-card">
+    <form method="post" enctype="multipart/form-data">
+      <?= csrf_field() ?>
+
+      <div class="row g-3 mb-4">
+        <div class="col-md-8">
+          <label class="form-label" for="projectTitle">Project Title <span style="color:#ef4444;">*</span></label>
+          <input type="text" id="projectTitle" name="title" class="form-control" value="<?= e($title) ?>" maxlength="140" required>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label" for="projectStatus">Publishing Status</label>
+          <select id="projectStatus" name="status" class="form-select">
+            <option value="published" <?= $status === 'published' ? 'selected' : '' ?>>Published (Live)</option>
+            <option value="draft" <?= $status === 'draft' ? 'selected' : '' ?>>Draft (Private)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="row g-3 mb-4">
+        <div class="col-md-6">
+          <label class="form-label" for="projectCategory">Category <span style="color:#ef4444;">*</span></label>
+          <select id="projectCategory" name="category" class="form-select" required>
+            <option value="web-design" <?= $category === 'web-design' ? 'selected' : '' ?>>Web Design</option>
+            <option value="software-development" <?= $category === 'software-development' ? 'selected' : '' ?>>Software Development</option>
+            <option value="mobile-app" <?= $category === 'mobile-app' ? 'selected' : '' ?>>Mobile App</option>
+            <option value="ui-ux" <?= $category === 'ui-ux' ? 'selected' : '' ?>>UI / UX Design</option>
+            <option value="branding" <?= $category === 'branding' ? 'selected' : '' ?>>Branding</option>
+            <option value="other" <?= $category === 'other' ? 'selected' : '' ?>>Other</option>
+          </select>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label" for="projectDate">Project Date</label>
+          <input type="date" id="projectDate" name="date" class="form-control" value="<?= e($date) ?>">
+        </div>
+      </div>
+
+      <div class="row g-3 mb-4">
+        <div class="col-md-6">
+          <label class="form-label" for="projectClient">Client / Organization</label>
+          <input type="text" id="projectClient" name="client" class="form-control" value="<?= e($client) ?>" maxlength="140">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label" for="projectTech">Technologies (comma-separated)</label>
+          <input type="text" id="projectTech" name="technologies" class="form-control" value="<?= e($technologies) ?>" maxlength="500" placeholder="e.g. PHP 8, MySQL, JavaScript, Figma, Tailwind CSS">
+          <div class="form-text">Displayed as technology pills on cards and in the case study.</div>
+        </div>
+      </div>
+
+      <div class="row g-3 mb-4">
+        <div class="col-md-6">
+          <label class="form-label" for="projectLiveUrl">Live Demo URL</label>
+          <input type="url" id="projectLiveUrl" name="project_url" class="form-control" value="<?= e($project_url) ?>" placeholder="https://example.com">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label" for="projectGithubUrl">GitHub Repository URL</label>
+          <input type="url" id="projectGithubUrl" name="github_url" class="form-control" value="<?= e($github_url) ?>" placeholder="https://github.com/kennedycheroben/...">
+        </div>
+      </div>
+
+      <div class="row g-3 mb-4">
+        <div class="col-md-6">
+          <label class="form-label" for="projectImage">Replace Image (Max 5MB)</label>
+          <input type="file" id="projectImage" name="image" class="form-control" accept="image/jpeg,image/png,image/webp">
+          <div class="form-text">Leave blank to keep existing image.</div>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label" for="projectImageUrl">Or Image URL</label>
+          <input type="text" id="projectImageUrl" name="image_url" class="form-control" value="<?= e($image_url) ?>" placeholder="assets/img/... or https://...">
+        </div>
+      </div>
+
+      <?php if ($image_url): ?>
+        <div class="mb-4">
+          <div class="form-label">Current Image Preview:</div>
+          <img src="<?= e(project_image_url($image_url)) ?>" alt="Current preview" style="max-width: 220px; height: auto; border-radius: 8px; border: 1px solid var(--admin-border);" onerror="this.onerror=null;this.src='<?= e(site_url('assets/img/cheroben_logo.webp')) ?>';">
+        </div>
+      <?php endif; ?>
+
+      <div class="mb-4">
+        <label class="form-label" for="projectVideoUrl">Video URL (optional)</label>
+        <input type="url" id="projectVideoUrl" name="video_url" class="form-control" value="<?= e($video_url) ?>" placeholder="https://assets.example.com/video.mp4">
+      </div>
+
+      <div class="mb-4">
+        <div class="form-check">
+          <input type="checkbox" class="form-check-input" id="projectFeatured" name="featured" value="1" <?= $featured ? 'checked' : '' ?>>
+          <label class="form-check-label" for="projectFeatured">Feature this project on the homepage</label>
+        </div>
+      </div>
+
+      <hr style="border-color: var(--admin-border); margin: 32px 0;">
+      <h2 style="font-size: 1.15rem; font-weight: 600; margin-bottom: 20px; color: var(--admin-text);">Case Study Narrative Details</h2>
+
+      <div class="mb-4">
+        <label class="form-label" for="projectDesc">Project Overview / Summary</label>
+        <textarea id="projectDesc" name="description" class="form-control" rows="4" maxlength="5000" placeholder="Brief synopsis of what the project is and what it accomplishes..."><?= e($description) ?></textarea>
+      </div>
+
+      <div class="mb-4">
+        <label class="form-label" for="projectProblem">The Challenge / Problem Statement</label>
+        <textarea id="projectProblem" name="problem" class="form-control" rows="4" maxlength="5000" placeholder="What core problem or operational challenge was this project built to solve?"><?= e($problem) ?></textarea>
+      </div>
+
+      <div class="mb-4">
+        <label class="form-label" for="projectContribution">Contribution & My Role</label>
+        <textarea id="projectContribution" name="contribution" class="form-control" rows="4" maxlength="5000" placeholder="Your specific role: architecture, database design, frontend implementation, UI/UX prototyping in Figma, etc..."><?= e($contribution) ?></textarea>
+      </div>
+
+      <div class="mb-4">
+        <label class="form-label" for="projectFeatures">Key Features & Architecture</label>
+        <textarea id="projectFeatures" name="features" class="form-control" rows="4" maxlength="5000" placeholder="Describe the main functional modules, user roles, security protections, APIs, etc..."><?= e($features) ?></textarea>
+      </div>
+
+      <div class="mb-4">
+        <label class="form-label" for="projectOutcomes">Outcomes & Results</label>
+        <textarea id="projectOutcomes" name="outcomes" class="form-control" rows="3" maxlength="5000" placeholder="Verified results, key takeaways, deployment metrics, user feedback..."><?= e($outcomes) ?></textarea>
+      </div>
+
+      <div class="d-flex gap-3 pt-3">
+        <button type="submit" class="btn-accent"><i class="bi bi-save" aria-hidden="true"></i> Update Project</button>
+        <a href="projects.php" class="btn-admin-view">Cancel</a>
+      </div>
+    </form>
+  </div>
+</main>
+<?php require __DIR__ . '/includes/admin-footer.php'; ?>

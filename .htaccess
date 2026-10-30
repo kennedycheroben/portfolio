@@ -32,6 +32,9 @@ DirectoryIndex index.php
 <IfModule mod_rewrite.c>
   RewriteEngine On
 
+  # Route sitemap.xml to dynamic generator with XML output
+  RewriteRule ^sitemap\.xml$ sitemap.php [L]
+
   # Return HTTP 404 directly for missing static assets without executing PHP 404 HTML
   RewriteCond %{REQUEST_FILENAME} !-f
   RewriteCond %{REQUEST_URI} \.(?:css|js|png|webp|jpe?g|gif|ico|svg|woff2?|map|ttf|eot)$ [NC]

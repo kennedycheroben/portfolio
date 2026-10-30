@@ -168,6 +168,15 @@ function site_url(string $path = ''): string
     return $basePath . '/' . ltrim($path, '/');
 }
 
+function canonical_url(string $path = ''): string
+{
+    $base = rtrim((string) (getenv('APP_URL') ?: 'https://kennedycheroben.co.ke'), '/');
+    if ($path === '' || $path === '/' || $path === 'index.php') {
+        return $base . '/';
+    }
+    return $base . '/' . ltrim($path, '/');
+}
+
 function redirect(string $location): never
 {
     header('Location: ' . $location, true, 303);

@@ -1,0 +1,34 @@
+# Kennedy Cheroben — Visual Design Specialist & Full-Stack Developer
+
+> Portfolio and professional profile of Kennedy Cheroben, based in Nairobi, Kenya.
+
+## Summary
+Kennedy Cheroben is a Visual Design Specialist and Full-Stack Developer specializing in custom PHP applications, relational database systems (MySQL/PDO), responsive frontends, and user-centered UI/UX design.
+
+## Professional Capabilities & Services
+- Full-Stack Web Applications: PHP 8+, PDO, MySQL, multipage and MVC architectures, custom admin dashboards, role-based authorization, secure authentication, and CSRF/XSS mitigation.
+- Responsive Websites: Semantic HTML5, modern CSS, mobile-first layouts, accessible interaction patterns (WCAG 2.2 AA), and cross-browser refinement.
+- UI/UX & Visual Design: Interface design, information architecture, wireframing, interactive prototyping in Figma, and design systems.
+- Maintenance & Optimization: Technical SEO, Core Web Vitals performance, database indexing, code auditing, and accessibility remediation.
+
+## Core Technology Stack
+- Languages: PHP 8+, JavaScript (ES6+), TypeScript, SQL, HTML5, CSS3, Python
+- Databases: MySQL, MariaDB, PDO
+- Design: Figma, Visual Design Systems, Interactive Prototyping
+- Standards & Tooling: Technical SEO, WCAG 2.2 AA Accessibility, REST APIs, Git, cPanel deployment
+
+## Key Public Pages
+- Home: https://kennedycheroben.co.ke/
+- Selected Work: https://kennedycheroben.co.ke/portfolio.php
+- About: https://kennedycheroben.co.ke/about.php
+- Services: https://kennedycheroben.co.ke/services.php
+- Service Approach: https://kennedycheroben.co.ke/service-details.php
+- Contact: https://kennedycheroben.co.ke/contact.php
+- Privacy Policy: https://kennedycheroben.co.ke/privacy.php
+- Terms of Service: https://kennedycheroben.co.ke/terms.php
+
+## Verified Contact
+- Email: kennedycheroben001@gmail.com
+- Phone / WhatsApp: +254 792 399 815 (https://wa.me/254792399815)
+- GitHub: https://github.com/kennedycheroben
+- Location: Nairobi, Kenya
