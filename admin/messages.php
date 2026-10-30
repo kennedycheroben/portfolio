@@ -5,6 +5,11 @@ require_once __DIR__ . '/../includes/auth.php';
 requireAdmin();
 require_once __DIR__ . '/../includes/db.php';
 
+if (!$pdo instanceof PDO) {
+    http_response_code(503);
+    exit('Database connection unavailable.');
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verify_csrf();
     $id = filter_input(INPUT_POST, 'id', FILTER_VALIDATE_INT);

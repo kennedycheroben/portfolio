@@ -5,6 +5,11 @@ require_once __DIR__ . '/../includes/auth.php';
 requireAdmin();
 require_once __DIR__ . '/../includes/db.php';
 
+if (!$pdo instanceof PDO) {
+    http_response_code(503);
+    exit('Database connection unavailable.');
+}
+
 $page = max(1, filter_input(INPUT_GET, 'page', FILTER_VALIDATE_INT) ?: 1);
 $perPage = 25;
 $totalProjects = (int) $pdo->query('SELECT COUNT(*) FROM projects')->fetchColumn();

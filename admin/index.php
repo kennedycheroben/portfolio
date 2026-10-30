@@ -5,6 +5,11 @@ require_once __DIR__ . '/../includes/auth.php';
 requireAdmin();
 require_once __DIR__ . '/../includes/db.php';
 
+if (!$pdo instanceof PDO) {
+    http_response_code(503);
+    exit('Database connection unavailable.');
+}
+
 $projectCount = (int) $pdo->query('SELECT COUNT(*) FROM projects')->fetchColumn();
 $publishedCount = (int) $pdo->query("SELECT COUNT(*) FROM projects WHERE status = 'published'")->fetchColumn();
 $featuredCount = (int) $pdo->query('SELECT COUNT(*) FROM projects WHERE featured = 1')->fetchColumn();

@@ -5,6 +5,11 @@ require_once __DIR__ . '/../includes/auth.php';
 requireAdmin();
 require_once __DIR__ . '/../includes/db.php';
 
+if (!$pdo instanceof PDO) {
+    http_response_code(503);
+    exit('Database connection unavailable.');
+}
+
 $id = filter_input(INPUT_GET, 'id', FILTER_VALIDATE_INT) ?: (filter_var($_GET['id'] ?? null, FILTER_VALIDATE_INT) ?: 0);
 $stmt = $pdo->prepare('SELECT * FROM projects WHERE id = ? LIMIT 1');
 $stmt->execute([$id]);
