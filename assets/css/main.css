@@ -178,9 +178,13 @@ main, .closing-cta, .site-footer { position: relative; z-index: 1; }
 .project-card:hover img, .work-card:hover img { transform: scale(1.03); filter: saturate(1) contrast(1); }
 .project-arrow, .work-card-image span { align-items: center; backdrop-filter: blur(12px); background: rgba(10, 10, 12, .8); border: 1px solid var(--line); border-radius: 50%; bottom: 24px; display: flex; font-size: 1.2rem; height: 56px; justify-content: center; position: absolute; right: 24px; width: 56px; color: var(--text); transition: background var(--transition-fast), border-color var(--transition-fast), transform var(--transition-fast); }
 .project-card:hover .project-arrow, .work-card:hover .work-card-image span { background: var(--accent); border-color: var(--accent); transform: translateX(4px); }
-.project-meta { display: grid; gap: 28px; grid-template-columns: 1fr 1fr; padding-top: 26px; }
-.project-meta h3 { font-size: var(--font-size-step-4); margin: 8px 0 0; }
-.project-meta > p { font-size: var(--font-size-step-1); margin: 0; color: var(--text-dim); }
+/* Single-column stack: cards sit in a 3-column grid, so splitting their content into two columns squeezed the buttons and stretched the tech chips. */
+.project-meta { display: flex; flex-direction: column; align-items: flex-start; padding-top: 26px; }
+.project-meta h3 { font-size: var(--font-size-step-3); margin: 10px 0 18px; overflow-wrap: anywhere; }
+.project-meta h3 a { text-decoration: none; transition: color var(--transition-fast); }
+.project-meta h3 a:hover { color: var(--accent); }
+.project-meta > p { font-size: var(--font-size-step-1); line-height: 1.7; margin: 0; color: var(--text-dim); }
+.project-meta .project-tech-pills { align-items: flex-start; }
 
 .stats-section { background: linear-gradient(180deg, rgba(22, 22, 26, .5), rgba(10, 10, 12, .2)); }
 .stats-grid { display: grid; gap: 24px; grid-template-columns: repeat(4, 1fr); }

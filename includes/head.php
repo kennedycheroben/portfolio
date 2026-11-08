@@ -130,7 +130,7 @@ if (!empty($extraSchema) && is_array($extraSchema)) {
 
   <script>document.documentElement.classList.add('js')</script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
-  <link rel="stylesheet" href="<?= e(site_url('assets/css/main.css?v=20261013_1')) ?>">
+  <link rel="stylesheet" href="<?= e(site_url('assets/css/main.css?v=20261108_1')) ?>">
 
 <?php if (!str_starts_with($pagePath, 'admin/')): ?>
   <link rel="preload" as="image" type="image/webp" href="<?= e(site_url('assets/img/hero-video-poster.webp')) ?>">
