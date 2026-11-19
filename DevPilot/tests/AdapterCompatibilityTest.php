@@ -3,18 +3,19 @@ declare(strict_types=1);
 
 namespace DevPilot\Tests;
 
-use DevPilot\AdapterFactory;
+use DevPilot\Adapters\AdapterContract;
+use DevPilot\Adapters\Php\VanillaPhpAdapter;
 
 final class AdapterCompatibilityTest extends TestCase
 {
     public function testVanillaPhpAdapterImplementsInterface(): void
     {
-        $adapterClass = 'DevPilot\Adapters\Php\VanillaPhpAdapter';
+        $adapterClass = VanillaPhpAdapter::class;
 
         $this->assertTrue(class_exists($adapterClass), 'VanillaPhpAdapter class exists');
 
         $reflection = new \ReflectionClass($adapterClass);
-        $interface = new \ReflectionClass(\DevPilot\AdapterContract::class);
+        $interface = new \ReflectionClass(AdapterContract::class);
 
         foreach ($interface->getMethods() as $interfaceMethod) {
             $methodName = $interfaceMethod->getName();
@@ -42,10 +43,9 @@ final class AdapterCompatibilityTest extends TestCase
         }
         file_put_contents($testPath . '/index.php', '<?php echo "test"; ?>');
 
-        $adapterClass = 'DevPilot\Adapters\Php\VanillaPhpAdapter';
-        $adapter = new $adapterClass($testPath);
+        $adapter = new VanillaPhpAdapter($testPath);
 
-        $this->assertInstanceOf($adapterClass::class, $adapter);
+        $this->assertInstanceOf(VanillaPhpAdapter::class, $adapter);
         $this->assertSame($testPath, $adapter->getProjectPath());
     }
 
@@ -54,8 +54,7 @@ final class AdapterCompatibilityTest extends TestCase
         $testPath = sys_get_temp_dir() . '/devpilot-adapter-test';
         file_put_contents($testPath . '/index.php', '<?php echo "test"; ?>');
 
-        $adapterClass = 'DevPilot\Adapters\Php\VanillaPhpAdapter';
-        $adapter = new $adapterClass($testPath);
+        $adapter = new VanillaPhpAdapter($testPath);
 
         $commands = $adapter->getAvailableCommands();
 
@@ -69,8 +68,7 @@ final class AdapterCompatibilityTest extends TestCase
 
     public function testGetSupportedStackReturnsValidArray(): void
     {
-        $adapterClass = 'DevPilot\Adapters\Php\VanillaPhpAdapter';
-        $stack = $adapterClass::getSupportedStack();
+        $stack = VanillaPhpAdapter::getSupportedStack();
 
         $this->assertIsArray($stack);
         $this->assertArrayHasKey('php', $stack);
@@ -88,10 +86,49 @@ final class AdapterCompatibilityTest extends TestCase
         $testPath = sys_get_temp_dir() . '/devpilot-adapter-test';
         file_put_contents($testPath . '/index.php', '<?php echo "test"; ?>');
 
-        $adapterClass = 'DevPilot\Adapters\Php\VanillaPhpAdapter';
-        $supports = $adapterClass::supports($testPath);
+        $supports = VanillaPhpAdapter::supports($testPath);
 
         $this->assertTrue($supports);
+
+        @unlink($testPath . '/index.php');
+        @rmdir($testPath);
+    }
+
+    public function testAdapterSupportsInvalidPath(): void
+    {
+        $testPath = sys_get_temp_dir() . '/devpilot-adapter-test-nonexistent';
+
+        $supports = VanillaPhpAdapter::supports($testPath);
+
+        $this->assertFalse($supports);
+    }
+
+    public function testAdapterInterfaceCompatibility(): void
+    {
+        $testPath = sys_get_temp_dir() . '/devpilot-adapter-test';
+        file_put_contents($testPath . '/index.php', '<?php echo "test"; ?>');
+
+        $adapter = new VanillaPhpAdapter($testPath);
+
+        // Test all interface methods can be called
+        $this->assertIsString($adapter::getVersion());
+        $this->assertIsArray($adapter::getSupportedStack());
+        $this->assertIsBool($adapter::supports($testPath));
+
+        $discovered = $adapter->discover();
+        $this->assertIsArray($discovered);
+        $this->assertArrayHasKey('name', $discovered);
+        $this->assertArrayHasKey('type', $discovered);
+
+        $health = $adapter->checkHealth();
+        $this->assertIsArray($health);
+        $this->assertArrayHasKey('healthy', $health);
+
+        $commands = $adapter->getAvailableCommands();
+        $this->assertIsArray($commands);
+
+        $demoData = $adapter->generateDemoData([]);
+        $this->assertIsArray($demoData);
 
         @unlink($testPath . '/index.php');
         @rmdir($testPath);

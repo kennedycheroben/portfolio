@@ -78,6 +78,24 @@ final class Registry
         $this->nextId = empty($ids) ? 1 : (max($ids) + 1);
     }
 
+    private function withLock(callable $operation): mixed
+    {
+        $handle = $this->acquireLock();
+
+        try {
+            // Reload latest state while holding the lock
+            $this->load();
+
+            $result = $operation();
+
+            $this->writeToDisk();
+
+            return $result;
+        } finally {
+            $this->releaseLock($handle);
+        }
+    }
+
     private function acquireLock()
     {
         $handle = fopen($this->lockFilePath, 'w');
@@ -99,113 +117,100 @@ final class Registry
         fclose($handle);
     }
 
-    private function saveWithLock(): void
+    private function writeToDisk(): void
     {
-        $handle = $this->acquireLock();
-
-        try {
-            // Reload latest state while holding the lock
-            $this->load();
-
-            $dir = dirname($this->filePath);
-            if (!is_dir($dir)) {
-                if (!mkdir($dir, 0700, true)) {
-                    throw new RuntimeException('Failed to create registry directory');
-                }
+        $dir = dirname($this->filePath);
+        if (!is_dir($dir)) {
+            if (!mkdir($dir, 0700, true)) {
+                throw new RuntimeException('Failed to create registry directory');
             }
+        }
 
-            $tempFile = $this->filePath . '.tmp.' . uniqid('', true);
+        $tempFile = $this->filePath . '.tmp.' . uniqid('', true);
 
-            $data = [
-                'exported_at' => date('c'),
-                'version' => '1.0',
-                'count' => count($this->projects),
-                'projects' => array_values($this->projects),
-            ];
+        $data = [
+            'exported_at' => date('c'),
+            'version' => '1.0',
+            'count' => count($this->projects),
+            'projects' => array_values($this->projects),
+        ];
 
-            $json = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
-            if ($json === false) {
-                throw new RuntimeException('Failed to encode registry data as JSON');
-            }
+        $json = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        if ($json === false) {
+            throw new RuntimeException('Failed to encode registry data as JSON');
+        }
 
-            $tempHandle = fopen($tempFile, 'w');
-            if ($tempHandle === false) {
-                throw new RuntimeException('Failed to create temporary registry file');
-            }
+        $tempHandle = fopen($tempFile, 'w');
+        if ($tempHandle === false) {
+            throw new RuntimeException('Failed to create temporary registry file');
+        }
 
-            if (!flock($tempHandle, LOCK_EX)) {
-                fclose($tempHandle);
-                unlink($tempFile);
-                throw new RuntimeException('Failed to acquire exclusive lock on temp file');
-            }
+        if (!flock($tempHandle, LOCK_EX)) {
+            fclose($tempHandle);
+            unlink($tempFile);
+            throw new RuntimeException('Failed to acquire exclusive lock on temp file');
+        }
 
-            $written = fwrite($tempHandle, $json);
-            if ($written === false || $written !== strlen($json)) {
-                flock($tempHandle, LOCK_UN);
-                fclose($tempHandle);
-                unlink($tempFile);
-                throw new RuntimeException('Failed to write complete registry content');
-            }
-
-            fflush($tempHandle);
+        $written = fwrite($tempHandle, $json);
+        if ($written === false || $written !== strlen($json)) {
             flock($tempHandle, LOCK_UN);
             fclose($tempHandle);
+            unlink($tempFile);
+            throw new RuntimeException('Failed to write complete registry content');
+        }
 
-            chmod($tempFile, 0600);
+        fflush($tempHandle);
+        flock($tempHandle, LOCK_UN);
+        fclose($tempHandle);
 
-            if (!rename($tempFile, $this->filePath)) {
-                unlink($tempFile);
-                throw new RuntimeException('Failed to atomically replace registry file');
-            }
+        chmod($tempFile, 0600);
 
-        } finally {
-            $this->releaseLock($handle);
+        if (!rename($tempFile, $this->filePath)) {
+            unlink($tempFile);
+            throw new RuntimeException('Failed to atomically replace registry file');
         }
     }
 
     public function add(Project $project): int
     {
-        $this->saveWithLock();
+        return $this->withLock(function () use ($project): int {
+            $existing = $this->findByPath($project->path);
+            if ($existing !== null) {
+                return $existing->id;
+            }
 
-        $existing = $this->findByPath($project->path);
-        if ($existing !== null) {
-            return $existing->id;
-        }
+            $project->id = $this->nextId++;
+            $project->createdAt = date('c');
+            $project->updatedAt = date('c');
 
-        $project->id = $this->nextId++;
-        $project->createdAt = date('c');
-        $project->updatedAt = date('c');
-
-        $this->projects[$project->id] = $project;
-        $this->saveWithLock();
-        return $project->id;
+            $this->projects[$project->id] = $project;
+            return $project->id;
+        });
     }
 
     public function update(Project $project): bool
     {
-        $this->saveWithLock();
+        return $this->withLock(function () use ($project): bool {
+            if (!isset($this->projects[$project->id])) {
+                return false;
+            }
 
-        if (!isset($this->projects[$project->id])) {
-            return false;
-        }
-
-        $project->updatedAt = date('c');
-        $this->projects[$project->id] = $project;
-        $this->saveWithLock();
-        return true;
+            $project->updatedAt = date('c');
+            $this->projects[$project->id] = $project;
+            return true;
+        });
     }
 
     public function remove(int $id): bool
     {
-        $this->saveWithLock();
+        return $this->withLock(function () use ($id): bool {
+            if (!isset($this->projects[$id])) {
+                return false;
+            }
 
-        if (!isset($this->projects[$id])) {
-            return false;
-        }
-
-        unset($this->projects[$id]);
-        $this->saveWithLock();
-        return true;
+            unset($this->projects[$id]);
+            return true;
+        });
     }
 
     public function get(int $id): ?Project
@@ -296,27 +301,28 @@ final class Registry
 
     public function import(string $json): int
     {
-        $data = json_decode($json, true);
-        if (!is_array($data) || !isset($data['projects'])) {
-            throw new RuntimeException('Invalid import format');
-        }
-
-        $count = 0;
-        foreach ($data['projects'] as $row) {
-            if (!isset($row['name'], $row['path'])) {
-                continue;
+        return $this->withLock(function () use ($json): int {
+            $data = json_decode($json, true);
+            if (!is_array($data) || !isset($data['projects'])) {
+                throw new RuntimeException('Invalid import format');
             }
 
-            $project = Project::fromArray($row);
-            $this->projects[$project->id] = $project;
-            if ($project->id >= $this->nextId) {
-                $this->nextId = $project->id + 1;
-            }
-            $count++;
-        }
+            $count = 0;
+            foreach ($data['projects'] as $row) {
+                if (!isset($row['name'], $row['path'])) {
+                    continue;
+                }
 
-        $this->saveWithLock();
-        return $count;
+                $project = Project::fromArray($row);
+                $this->projects[$project->id] = $project;
+                if ($project->id >= $this->nextId) {
+                    $this->nextId = $project->id + 1;
+                }
+                $count++;
+            }
+
+            return $count;
+        });
     }
 
     public function getAll(): array

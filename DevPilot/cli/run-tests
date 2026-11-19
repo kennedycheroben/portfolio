@@ -13,6 +13,8 @@ use DevPilot\Config;
 use DevPilot\Discovery;
 use DevPilot\Project;
 use DevPilot\Registry;
+use DevPilot\Adapters\AdapterContract;
+use DevPilot\Adapters\Php\VanillaPhpAdapter;
 
 const TESTS_PASSED = 0;
 const TESTS_FAILED = 1;
@@ -199,6 +201,110 @@ $results = test('logger redacts sensitive context keys recursively', function() 
     assert($result['normal_key'] === 'normal_value', 'Normal key preserved');
     assert($result['nested']['secret'] === '***REDACTED***', 'Nested secret redacted');
     assert($result['nested']['public'] === 'public_data', 'Nested public preserved');
+}, $results);
+
+echo "\n9. Adapter Compatibility Tests\n";
+$results = test('adapter implements AdapterContract interface', function() use (&$results) {
+    $reflection = new ReflectionClass(\DevPilot\Adapters\AdapterContract::class);
+    $adapterReflection = new ReflectionClass(\DevPilot\Adapters\Php\VanillaPhpAdapter::class);
+
+    foreach ($reflection->getMethods() as $interfaceMethod) {
+        $methodName = $interfaceMethod->getName();
+        if ($methodName === '__construct') continue;
+
+        assert($adapterReflection->hasMethod($methodName), "Missing method: {$methodName}");
+    }
+}, $results);
+
+$results = test('adapter instantiation works', function() use (&$results) {
+    $testDir = sys_get_temp_dir() . '/devpilot-test-' . uniqid();
+    @mkdir($testDir, 0755, true);
+    file_put_contents($testDir . '/index.php', '<?php echo "test"; ?>');
+
+    $adapter = new \DevPilot\Adapters\Php\VanillaPhpAdapter($testDir);
+    assert($adapter instanceof \DevPilot\Adapters\Php\VanillaPhpAdapter);
+    assert($adapter->getProjectPath() === $testDir);
+
+    @unlink($testDir . '/index.php');
+    @rmdir($testDir);
+}, $results);
+
+$results = test('getAvailableCommands is instance method', function() use (&$results) {
+    $testDir = sys_get_temp_dir() . '/devpilot-test-' . uniqid();
+    @mkdir($testDir, 0755, true);
+    file_put_contents($testDir . '/index.php', '<?php echo "test"; ?>');
+
+    $adapter = new \DevPilot\Adapters\Php\VanillaPhpAdapter($testDir);
+    $commands = $adapter->getAvailableCommands();
+
+    assert(is_array($commands));
+    assert(array_key_exists('build', $commands));
+    assert(array_key_exists('test', $commands));
+    assert(array_key_exists('serve', $commands));
+    assert(array_key_exists('lint', $commands));
+    assert(array_key_exists('generateDemoData', $commands));
+
+    @unlink($testDir . '/index.php');
+    @rmdir($testDir);
+}, $results);
+
+$results = test('getSupportedStack returns valid array without duplicates', function() use (&$results) {
+    $stack = \DevPilot\Adapters\Php\VanillaPhpAdapter::getSupportedStack();
+
+    assert(is_array($stack));
+    assert(array_key_exists('php', $stack));
+    assert(count(array_keys($stack)) === 1, 'No duplicate PHP keys');
+
+    @unlink(sys_get_temp_dir() . '/devpilot-adapter-test/index.php');
+    @rmdir(sys_get_temp_dir() . '/devpilot-adapter-test');
+}, $results);
+
+$results = test('adapter supports valid path', function() use (&$results) {
+    $testDir = sys_get_temp_dir() . '/devpilot-test-' . uniqid();
+    @mkdir($testDir, 0755, true);
+    file_put_contents($testDir . '/index.php', '<?php echo "test"; ?>');
+
+    $supports = \DevPilot\Adapters\Php\VanillaPhpAdapter::supports($testDir);
+    assert($supports === true);
+
+    @unlink($testDir . '/index.php');
+    @rmdir($testDir);
+}, $results);
+
+$results = test('adapter does not support invalid path', function() use (&$results) {
+    $testDir = sys_get_temp_dir() . '/devpilot-test-nonexistent-' . uniqid();
+    $supports = \DevPilot\Adapters\Php\VanillaPhpAdapter::supports($testDir);
+    assert($supports === false);
+}, $results);
+
+$results = test('adapter interface compatibility - all methods callable', function() use (&$results) {
+    $testDir = sys_get_temp_dir() . '/devpilot-test-' . uniqid();
+    @mkdir($testDir, 0755, true);
+    file_put_contents($testDir . '/index.php', '<?php echo "test"; ?>');
+
+    $adapter = new \DevPilot\Adapters\Php\VanillaPhpAdapter($testDir);
+
+    assert(is_string($adapter::getVersion()));
+    assert(is_array($adapter::getSupportedStack()));
+    assert(is_bool($adapter::supports($testDir)));
+
+    $discovered = $adapter->discover();
+    assert(is_array($discovered));
+    assert(array_key_exists('name', $discovered));
+    assert(array_key_exists('type', $discovered));
+
+    $health = $adapter->checkHealth();
+    assert(is_array($health));
+    assert(array_key_exists('healthy', $health));
+
+    $commands = $adapter->getAvailableCommands();
+    assert(is_array($commands));
+
+    $demoData = $adapter->generateDemoData([]);
+    assert(is_array($demoData));
+
+    @unlink($testDir . '/index.php');
+    @rmdir($testDir);
 }, $results);
 
 // Cleanup

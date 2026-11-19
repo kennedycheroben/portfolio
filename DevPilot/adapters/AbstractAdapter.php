@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 namespace DevPilot\Adapters;
 
-use DevPilot\OutOfBoundsException;
+use OutOfBoundsException;
 use DevPilot\Project;
 use DevPilot\Registry;
 
