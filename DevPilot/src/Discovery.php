@@ -8,19 +8,31 @@ use OutOfBoundsException;
 final class Discovery
 {
     private const MARKERS = [
-        'php' => ['composer.json', 'artisan', '.php'],
+        'php' => ['composer.json'],
+        'laravel' => ['artisan', 'bootstrap/app.php'],
+        'symfony' => ['symfony.lock', 'bin/console'],
+        'django' => ['manage.py', 'settings.py'],
+        'flask' => ['app.py', 'flask.py'],
+        'fastapi' => ['main.py', 'fastapi.py'],
+        'vue' => ['vue.config.js', 'vite.config.js', 'vue.config.ts'],
+        'react' => ['react-scripts', 'react-app'],
         'javascript' => ['package.json', 'pnpm-lock.yaml', 'yarn.lock'],
-        'typescript' => ['package.json', 'tsconfig.json', 'tsc.config.json'],
+        'typescript' => ['tsconfig.json', 'tsconfig.app.json'],
         'python' => ['requirements.txt', 'pyproject.toml', 'setup.py', 'Pipfile'],
-        'laravel' => ['artisan', 'composer.json', 'bootstrap/app.php'],
-        'vue' => ['package.json', 'vue.config.js', 'vite.config.js'],
-        'react' => ['package.json', 'tsconfig.json', '.eslintrc'],
         'node' => ['package.json'],
         'dockerfile' => ['Dockerfile', 'docker-compose.yml'],
         'mysql' => ['.env', '.env.local', 'database.mysql', 'my.cnf'],
         'postgresql' => ['.env', '.env.local', 'database.pg', '.pgpass', 'postgresql.conf'],
         'supabase' => ['supabase/config.toml', 'supabase/migrations'],
+        'sqlite' => ['.sqlite', '.sqlite3', '.db'],
         'git' => ['.git'],
+    ];
+
+    private const EXCLUDE_DIRS = [
+        '.git', 'vendor', 'node_modules', '.cache', 'build', 'dist',
+        '.idea', '.vscode', '__pycache__', '.pytest_cache', 'coverage',
+        'var/cache', 'var/log', 'storage/framework', 'bootstrap/cache',
+        'target', 'bin', 'obj', '.git', 'node_modules', 'vendor',
     ];
 
     public static function detect(string $path): array
@@ -36,35 +48,42 @@ final class Discovery
             'frameworks' => [],
             'databases' => [],
             'hasGit' => false,
+            'evidence' => [], // Track evidence for each detection
         ];
 
-        $scanResult = self::scanDirectory($validatedPath, 10);
+        $scanResult = self::scanDirectory($validatedPath, 5);
         $files = $scanResult['files'];
         $filePathList = $scanResult['filePaths'];
 
         foreach (self::MARKERS as $technology => $markers) {
+            $matched = false;
+            $matchedMarker = null;
+
             foreach ($markers as $marker) {
                 if (in_array($marker, $files, true)) {
-                    if (self::isFramework($technology)) {
-                        $detected['frameworks'][] = $technology;
-                    } elseif (self::isDatabase($technology)) {
-                        $detected['databases'][] = $technology;
-                    } else {
-                        $detected['technologies'][] = $technology;
-                    }
+                    $matched = true;
+                    $matchedMarker = $marker;
                     break;
                 }
 
                 $markerPath = self::findFile($filePathList, $marker);
                 if ($markerPath !== null) {
-                    if (self::isFramework($technology)) {
-                        $detected['frameworks'][] = $technology;
-                    } elseif (self::isDatabase($technology)) {
-                        $detected['databases'][] = $technology;
-                    } else {
-                        $detected['technologies'][] = $technology;
-                    }
+                    $matched = true;
+                    $matchedMarker = $marker;
                     break;
+                }
+            }
+
+            if ($matched) {
+                if (self::isFramework($technology)) {
+                    $detected['frameworks'][] = $technology;
+                    $detected['evidence'][$technology] = 'Found ' . $matchedMarker;
+                } elseif (self::isDatabase($technology)) {
+                    $detected['databases'][] = $technology;
+                    $detected['evidence'][$technology] = 'Found ' . $matchedMarker;
+                } else {
+                    $detected['technologies'][] = $technology;
+                    $detected['evidence'][$technology] = 'Found ' . $matchedMarker;
                 }
             }
         }
@@ -77,11 +96,15 @@ final class Discovery
         return $detected;
     }
 
-    private static function scanDirectory(string $path, int $depth = 5, int $currentDepth = 0): array
+    private static function scanDirectory(string $path, int $depth = 3, int $currentDepth = 0): array
     {
         $result = ['files' => [], 'filePaths' => []];
 
         if (!is_dir($path)) {
+            return $result;
+        }
+
+        if ($currentDepth >= $depth) {
             return $result;
         }
 
@@ -94,13 +117,15 @@ final class Discovery
             $fileName = $fileInfo->getFilename();
             $fullPath = $fileInfo->getPathname();
 
+            // Skip excluded directories
+            if ($fileInfo->isDir() && in_array($fileName, self::EXCLUDE_DIRS, true)) {
+                continue;
+            }
+
             $result['files'][] = $fileName;
             $result['filePaths'][] = $fullPath;
 
-            if ($currentDepth < $depth && $fileInfo->isDir()) {
-                if (str_starts_with($fileName, '.') && $fileName !== '.git') {
-                    continue;
-                }
+            if ($fileInfo->isDir() && $currentDepth < $depth) {
                 $subdir = self::scanDirectory($fullPath, $depth, $currentDepth + 1);
                 foreach ($subdir['files'] as $f) {
                     if (!in_array($f, $result['files'], true)) {
@@ -133,7 +158,9 @@ final class Discovery
 
     private static function isFramework(string $technology): bool
     {
-        return in_array($technology, ['laravel', 'vue', 'react', 'symfony', 'django', 'flask', 'fastapi'], true);
+        return in_array($technology, [
+            'laravel', 'symfony', 'vue', 'react', 'django', 'flask', 'fastapi', 'spring', 'rails'
+        ], true);
     }
 
     private static function isDatabase(string $technology): bool
@@ -143,29 +170,51 @@ final class Discovery
 
     private static function detectPrimaryLanguage(array $paths, array $fileNames): string
     {
-        $languages = ['php', 'javascript', 'typescript', 'python', 'java', 'go', 'rust', 'csharp'];
-        $indicators = [
-            'php' => ['composer.json', 'artisan', '.php'],
-            'javascript' => ['package.json', 'index.js', 'app.js'],
-            'typescript' => ['package.json', 'tsconfig.json', '.ts'],
-            'python' => ['requirements.txt', 'pyproject.toml', '.py', 'setup.py'],
-            'java' => ['pom.xml', 'build.gradle', '.java'],
-            'go' => ['go.mod', 'go.sum', '.go'],
-            'rust' => ['Cargo.toml', '.rs'],
-            'csharp' => ['.csproj', '.sln'],
+        $languages = [
+            'php' => ['composer.json', 'artisan', 'php', 'phtml'],
+            'typescript' => ['tsconfig.json', 'tsconfig.app.json', 'ts', 'tsx'],
+            'javascript' => ['package.json', 'js', 'jsx', 'mjs', 'cjs'],
+            'python' => ['requirements.txt', 'pyproject.toml', 'py', 'setup.py'],
+            'java' => ['pom.xml', 'build.gradle', 'java'],
+            'go' => ['go.mod', 'go.sum', 'go'],
+            'rust' => ['Cargo.toml', 'rs'],
+            'csharp' => ['.csproj', '.sln', 'cs'],
+            'ruby' => ['Gemfile', 'rb', 'rakefile'],
         ];
 
-        foreach ($languages as $lang) {
-            foreach ($indicators[$lang] as $indicator) {
+        // Count evidence for each language
+        $languageScores = [];
+
+        foreach ($languages as $lang => $indicators) {
+            $score = 0;
+            foreach ($indicators as $indicator) {
                 if (in_array($indicator, $fileNames, true)) {
-                    return $lang;
+                    $score += 10;
                 }
                 if (self::findFile($paths, $indicator) !== null) {
-                    return $lang;
+                    $score += 5;
                 }
+                // Count file extensions
+                $extCount = 0;
+                foreach ($fileNames as $fn) {
+                    if (str_ends_with($fn, '.' . $indicator) || ($indicator !== 'composer.json' && $indicator !== 'package.json' && str_contains($fn, '.' . $indicator))) {
+                        $extCount++;
+                    }
+                }
+                $score += min($extCount * 2, 50);
+            }
+
+            if ($score > 0) {
+                $languageScores[$lang] = $score;
             }
         }
 
-        return 'unknown';
+        if (empty($languageScores)) {
+            return 'unknown';
+        }
+
+        // Return language with highest score
+        arsort($languageScores);
+        return array_key_first($languageScores);
     }
 }

@@ -166,7 +166,7 @@ $results = test('blocks empty path', function() {
 echo "\n8. Logger Redaction Tests\n";
 $results = test('logger has secret redaction patterns', function() {
     $reflection = new ReflectionClass(\DevPilot\Logger::class);
-    $method = $reflection->getMethod('redact');
+    $method = $reflection->getMethod('redactMessage');
     $method->setAccessible(true);
 
     $testInput = 'password="secret123" api_key="sk-test" DB_PASS="dbsecret"';
@@ -176,6 +176,29 @@ $results = test('logger has secret redaction patterns', function() {
     assert(!str_contains($result, 'secret123'), 'Password not exposed');
     assert(!str_contains($result, 'sk-test'), 'API key not exposed');
     assert(!str_contains($result, 'dbsecret'), 'DB_PASS not exposed');
+}, $results);
+
+$results = test('logger redacts sensitive context keys recursively', function() {
+    $reflection = new ReflectionClass(\DevPilot\Logger::class);
+    $method = $reflection->getMethod('redactContext');
+    $method->setAccessible(true);
+
+    $testInput = [
+        'password' => 'secret123',
+        'api_key' => 'sk-test',
+        'normal_key' => 'normal_value',
+        'nested' => [
+            'secret' => 'nested_secret',
+            'public' => 'public_data',
+        ],
+    ];
+    $result = $method->invoke(null, $testInput);
+
+    assert($result['password'] === '***REDACTED***', 'Password redacted');
+    assert($result['api_key'] === '***REDACTED***', 'API key redacted');
+    assert($result['normal_key'] === 'normal_value', 'Normal key preserved');
+    assert($result['nested']['secret'] === '***REDACTED***', 'Nested secret redacted');
+    assert($result['nested']['public'] === 'public_data', 'Nested public preserved');
 }, $results);
 
 // Cleanup

@@ -11,11 +11,13 @@ final class Registry
     private array $projects = [];
     private int $nextId = 1;
     private string $filePath;
+    private string $lockFilePath;
     private static ?Registry $instance = null;
 
     public function __construct(string $filePath)
     {
         $this->filePath = dirname($filePath) . '/projects.json';
+        $this->lockFilePath = dirname($this->filePath) . '/.projects.lock';
         $this->migrateIfNecessary();
         $this->load();
     }
@@ -76,62 +78,95 @@ final class Registry
         $this->nextId = empty($ids) ? 1 : (max($ids) + 1);
     }
 
-    private function save(): void
+    private function acquireLock()
     {
-        $dir = dirname($this->filePath);
-        if (!is_dir($dir)) {
-            if (!mkdir($dir, 0700, true)) {
-                throw new RuntimeException('Failed to create registry directory');
-            }
-        }
-
-        $tempFile = $this->filePath . '.tmp';
-
-        $data = [
-            'exported_at' => date('c'),
-            'version' => '1.0',
-            'count' => count($this->projects),
-            'projects' => array_values($this->projects),
-        ];
-
-        $json = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
-        if ($json === false) {
-            throw new RuntimeException('Failed to encode registry data as JSON');
-        }
-
-        $handle = fopen($tempFile, 'w');
+        $handle = fopen($this->lockFilePath, 'w');
         if ($handle === false) {
-            throw new RuntimeException('Failed to create temporary registry file');
+            throw new RuntimeException('Failed to create lock file');
         }
 
         if (!flock($handle, LOCK_EX)) {
             fclose($handle);
-            unlink($tempFile);
             throw new RuntimeException('Failed to acquire exclusive lock on registry');
         }
 
-        $written = fwrite($handle, $json);
-        if ($written === false || $written !== strlen($json)) {
-            flock($handle, LOCK_UN);
-            fclose($handle);
-            unlink($tempFile);
-            throw new RuntimeException('Failed to write complete registry content');
-        }
+        return $handle;
+    }
 
-        fflush($handle);
+    private function releaseLock($handle): void
+    {
         flock($handle, LOCK_UN);
         fclose($handle);
+    }
 
-        chmod($tempFile, 0600);
+    private function saveWithLock(): void
+    {
+        $handle = $this->acquireLock();
 
-        if (!rename($tempFile, $this->filePath)) {
-            unlink($tempFile);
-            throw new RuntimeException('Failed to atomically replace registry file');
+        try {
+            // Reload latest state while holding the lock
+            $this->load();
+
+            $dir = dirname($this->filePath);
+            if (!is_dir($dir)) {
+                if (!mkdir($dir, 0700, true)) {
+                    throw new RuntimeException('Failed to create registry directory');
+                }
+            }
+
+            $tempFile = $this->filePath . '.tmp.' . uniqid('', true);
+
+            $data = [
+                'exported_at' => date('c'),
+                'version' => '1.0',
+                'count' => count($this->projects),
+                'projects' => array_values($this->projects),
+            ];
+
+            $json = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+            if ($json === false) {
+                throw new RuntimeException('Failed to encode registry data as JSON');
+            }
+
+            $tempHandle = fopen($tempFile, 'w');
+            if ($tempHandle === false) {
+                throw new RuntimeException('Failed to create temporary registry file');
+            }
+
+            if (!flock($tempHandle, LOCK_EX)) {
+                fclose($tempHandle);
+                unlink($tempFile);
+                throw new RuntimeException('Failed to acquire exclusive lock on temp file');
+            }
+
+            $written = fwrite($tempHandle, $json);
+            if ($written === false || $written !== strlen($json)) {
+                flock($tempHandle, LOCK_UN);
+                fclose($tempHandle);
+                unlink($tempFile);
+                throw new RuntimeException('Failed to write complete registry content');
+            }
+
+            fflush($tempHandle);
+            flock($tempHandle, LOCK_UN);
+            fclose($tempHandle);
+
+            chmod($tempFile, 0600);
+
+            if (!rename($tempFile, $this->filePath)) {
+                unlink($tempFile);
+                throw new RuntimeException('Failed to atomically replace registry file');
+            }
+
+        } finally {
+            $this->releaseLock($handle);
         }
     }
 
     public function add(Project $project): int
     {
+        $this->saveWithLock();
+
         $existing = $this->findByPath($project->path);
         if ($existing !== null) {
             return $existing->id;
@@ -142,30 +177,34 @@ final class Registry
         $project->updatedAt = date('c');
 
         $this->projects[$project->id] = $project;
-        $this->save();
+        $this->saveWithLock();
         return $project->id;
     }
 
     public function update(Project $project): bool
     {
+        $this->saveWithLock();
+
         if (!isset($this->projects[$project->id])) {
             return false;
         }
 
         $project->updatedAt = date('c');
         $this->projects[$project->id] = $project;
-        $this->save();
+        $this->saveWithLock();
         return true;
     }
 
     public function remove(int $id): bool
     {
+        $this->saveWithLock();
+
         if (!isset($this->projects[$id])) {
             return false;
         }
 
         unset($this->projects[$id]);
-        $this->save();
+        $this->saveWithLock();
         return true;
     }
 
@@ -276,7 +315,7 @@ final class Registry
             $count++;
         }
 
-        $this->save();
+        $this->saveWithLock();
         return $count;
     }
 

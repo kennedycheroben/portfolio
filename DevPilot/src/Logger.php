@@ -9,6 +9,21 @@ final class Logger
 {
     private static ?string $logFile = null;
 
+    private static array $sensitiveKeys = [
+        'password',
+        'passwd',
+        'secret',
+        'token',
+        'api_key',
+        'api-key',
+        'authorization',
+        'access_key',
+        'private_key',
+        'credential',
+        'db_pass',
+        'db_password',
+    ];
+
     public static function init(string $root): void
     {
         $logDir = $root . '/logs';
@@ -25,13 +40,14 @@ final class Logger
         }
 
         $timestamp = (new DateTimeImmutable())->format('Y-m-d\TH:i:sP');
-        $redacted = self::redact($message);
+        $redactedMessage = self::redactMessage($message);
+        $redactedContext = self::redactContext($context);
 
         $entry = [
             'timestamp' => $timestamp,
             'level' => $level,
-            'message' => $redacted,
-            'context' => self::redactContext($context),
+            'message' => $redactedMessage,
+            'context' => $redactedContext,
         ];
 
         $logLine = json_encode($entry, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
@@ -58,18 +74,11 @@ final class Logger
         self::log('DEBUG', $message, $context);
     }
 
-    private static function redact(string $message): string
+    private static function redactMessage(string $message): string
     {
-        $patterns = [
-            '/password["\']?\s*[:=]\s*["\']?[^"\'\s,}]+/i',
-            '/api[_-]?key["\']?\s*[:=]\s*["\']?[^"\'\s,}]+/i',
-            '/token["\']?\s*[:=]\s*["\']?[^"\'\s,}]+/i',
-            '/secret["\']?\s*[:=]\s*["\']?[^"\'\s,}]+/i',
-            '/DB_PASS["\']?\s*[:=]\s*["\']?[^"\'\s,}]+/i',
-        ];
-
-        foreach ($patterns as $pattern) {
-            $message = preg_replace($pattern, '$1 "***REDACTED***"', $message);
+        foreach (self::$sensitiveKeys as $key) {
+            $pattern = '/' . preg_quote($key, '/') . '["\']?\s*[:=]\s*["\']?[^"\'\s,}]+/i';
+            $message = preg_replace($pattern, $key . '="***REDACTED***"', $message);
         }
 
         return $message;
@@ -77,14 +86,31 @@ final class Logger
 
     private static function redactContext(array $context): array
     {
+        $redacted = [];
+
         foreach ($context as $key => $value) {
-            if (is_string($value)) {
-                $context[$key] = self::redact($value);
+            $lowerKey = strtolower($key);
+            $isSensitive = false;
+
+            foreach (self::$sensitiveKeys as $sensitiveKey) {
+                if (str_contains($lowerKey, $sensitiveKey)) {
+                    $isSensitive = true;
+                    break;
+                }
+            }
+
+            if ($isSensitive) {
+                $redacted[$key] = '***REDACTED***';
+            } elseif (is_string($value)) {
+                $redacted[$key] = self::redactMessage($value);
             } elseif (is_array($value)) {
-                $context[$key] = self::redactContext($value);
+                $redacted[$key] = self::redactContext($value);
+            } else {
+                $redacted[$key] = $value;
             }
         }
-        return $context;
+
+        return $redacted;
     }
 
     public static function readLogs(int $lines = 100): array

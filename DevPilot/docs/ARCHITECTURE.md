@@ -1,97 +1,177 @@
 # DevPilot Architecture
 
-## Overview
+## Universal Development Operations Assistant
 
-DevPilot is a private AI Development Operations Assistant designed to manage, inspect, test, and operate multiple software projects through a unified, extensible interface.
+DevPilot is a technology-agnostic platform for managing software development projects across languages, frameworks, databases, infrastructure providers, and development environments. It provides discovery, inspection, and operation capabilities through a plugin architecture.
 
-## Core Principles
+---
 
-1. **Read-Only Discovery**: Discovery never modifies project files or executes code
-2. **Zero-Cost Operations**: All core functionality works offline with free tools
-3. **Security First**: Path validation, secret redaction, environment separation
-4. **Extensibility**: Adapter pattern allows new project types without core changes
+## Core Design Principles
 
-## Architecture Components
+1. **Technology Independence**: Core is language/framework-agnostic
+2. **Read-Only Discovery**: Discovery never modifies project files or executes code
+3. **Zero-Cost Operations**: All core functionality works offline with free tools
+4. **Security First**: Path validation, secret redaction, environment separation
+5. **Extensibility**: Adapter pattern allows new project types without core changes
+6. **Explicit Authorization**: Mutating operations require explicit approval
+7. **Deterministic Operations**: No AI calls for deterministic tasks
+6. **Fail Safe**: Unknown technologies reported honestly, not assumed supported
 
-### 1. Project Registry
+---
 
-The Registry is the single source of truth for all registered projects.
+## A. Universal Core Architecture
 
-- **Storage**: JSON file (`registry/projects.json`) - no external database required
-- **Location**: `./registry/projects.json`
-- **Schema**: Array of Project objects with metadata
+### Project Lifecycle & Registry
+- **Registry**: Central JSON-based project database with atomic persistence
+- **State Management**: Environment-aware (development/staging/production)
+- **Metadata Storage**: Language, framework, database, hosting platform, status
+- **Concurrency**: File-locking with lock file separation for safe mutations
 
-### 2. Discovery Engine
+### Discovery Engine (Read-Only)
+- **Technology Detection**: Analyzes project files without executing code
+- **Marker-Based**: Uses composer.json, package.json, requirements.txt, etc.
+- **Framework Identification**: Laravel, Django, React, Vue, Spring, etc.
+- **Infrastructure Detection**: Docker, Git, database configuration
+- **Evidence-Based**: Reports what was found, not assumptions
 
-Read-only project inspection using static file analysis.
+### Security Layer
+- **Path Validation**: Blocks directory traversal, validates directories exist
+- **Secret Redaction**: Logs automatically redact passwords, API keys, tokens
+- **No Code Execution**: Discovery never runs build/test scripts
+- **Explicit Authorization**: Mutating operations require approval
 
-- **Method**: Scans for known marker files (composer.json, package.json, etc.)
-- **Output**: Technology stack, framework, database, Docker, Git status
-- **No Execution**: Never runs build scripts, tests, or migrations
+### Operation Orchestration
+- **Capability Registry**: Each operation declares requirements/permissions
+- **Execution Context**: Tracks environment, approvals, audit trail
+- **Result Handling**: Standardized success/failure/partial results
 
-### 3. Adapter Framework
+### Logging & Audit Trails
+- **Structured Logging**: JSON lines with timestamps and levels
+- **Secret Redaction**: Recursive redaction by sensitive key names
+- **Audit Trail**: Every operation logged with context
 
-Universal adapter contract that all project-type adapters implement.
+---
 
-```
-AdapterContract (interface)
-└── AbstractAdapter (base class)
-    └── Type-specific adapters (PHP, Laravel, Node.js, Python, etc.)
-```
+## B. Technology Intelligence
 
-### 4. CLI Interface
+Discovery identifies:
+- **Primary Language**: PHP, TypeScript, JavaScript, Python, Java, Go, Rust, C#, Ruby, etc.
+- **Frameworks/Libraries**: Laravel, Django, React, Vue, Spring, etc.
+- **Database Technology**: MySQL, PostgreSQL, SQLite, Supabase, MongoDB
+- **Build Tools**: Docker, CI configs (GitHub Actions, GitLab CI)
+- **Package Managers**: npm, Composer, pip, Cargo, Maven, Go modules
 
-Command-line interface for all operations.
+---
 
-- **Location**: `cli/devpilot`
-- **Commands**: register, list, discover, check, show, unregister, find
+## C. Adapter and Plugin System
 
-## Data Flow
+### Standardized Contract
+All adapters implement `AdapterContract`:
+- `discover()`: Read-only project analysis
+- `checkHealth()`: Health/diagnostics checks
+- `getAvailableCommands()`: Mutating operations available
+- `generateDemoData()`: Synthetic data generation (requires authorization)
+- `supports()`: Capability validation
 
-```
-User Command (CLI)
-    ↓
-Config (paths, settings)
-    ↓
-Registry (load/save projects)
-    ↓
-(Adapter) ← Discovery (optional, for new projects)
-    ↓
-Result → Output + Log
-```
+### Adapter Discovery
+- Auto-loaded from `adapters/` directory
+- Namespace-based organization (php/, python/, node/, etc.)
 
-## Security Boundaries
+### Support Levels
+1. **Native Adapter**: Explicitly tested and maintained
+2. **Generic Integration**: Standard interfaces work automatically
+3. **Experimental**: Detected but not fully validated
 
-### Path Validation
-All paths are validated:
-- Must be an existing directory
-- Cannot be empty
-- Path traversal patterns (`../`) are blocked
+---
 
-### Secret Redaction
-Logs automatically redact:
-- Passwords
-- API keys
-- Tokens
-- Secrets
+## D. Capability-Based Operations
 
-### Environment Separation
-- Each project has an `environment` field
-- Default: `development`
-- Options: `staging`, `production`
+Each operation declares:
+- **Requirements**: PHP version, extensions, tools
+- **Permissions**: Read-only or mutating
+- **Environment**: Local, staging, production
+- **Provider**: Which AI model (when applicable)
 
-### Session Security
-- CSRF protection in portfolio integration
-- Rate limiting on authentication
-- Secure session cookies
+### Core Capabilities
+| Capability | Type | Description |
+|------------|------|-------------|
+| `inspect` | Read-only | Read project structure and metadata |
+| `test` | Mutating | Run project test suite |
+| `serve` | Mutating | Start development server |
+| `diagnose` | Read-only | Analyze errors and issues |
+| `demo-data` | Mutating | Generate synthetic test data |
+| `deploy-plan` | Read-only | Create deployment strategy |
+| `health-monitor` | Read-only | Track project status |
+
+---
+
+## E. Environment and Infrastructure Awareness
+
+Projects classified by:
+- **Local**: Development machine
+- **Server**: VPS, dedicated, shared hosting
+- **Container**: Docker, Podman
+- **Cloud**: AWS, GCP, Azure, DigitalOcean
+- **CI/CD**: GitHub Actions, GitLab CI, etc.
+- **Edge**: Static hosting, CDN, serverless
+
+---
+
+## F. AI Provider Independence
+
+- **Core DevPilot makes ZERO AI calls** for deterministic operations
+- **AI integration** is a separate abstraction layer (Phase 4+)
+- **LiteLLM** remains external to the core
+- **Providers configured per-operation**, never implicit
+- **Fail safely** when providers unavailable
+- **No silent fallback** to paid providers
+
+---
+
+## Universal Compatibility Strategy
+
+### Support Levels
+1. **Native Adapter**: Explicitly tested and maintained
+2. **Generic Integration**: Standard interfaces work automatically
+3. **Experimental**: Detected but not fully validated
+
+Unknown technologies are reported honestly. Discovery ≠ Support guarantee.
+
+### Extensibility Rules
+- Add adapters without modifying core
+- Drop-in replacement for any component
+- Backward-compatible interface versions
+- Automatic capability reporting
+
+---
+
+## Security and Authorization
+
+### Explicit Authorization
+- All mutating operations require approval
+- Audit trail logs every operation
+- Destructive actions gated
+
+### Production Safety
+- Production classification enforced
+- No accidental deployment
+- Data separation guaranteed
+
+### Zero-Cost Constraint
+- No paid services in core
+- Free-tier APIs only
+- Local execution preferred
+
+---
 
 ## File Structure
 
 ```
 DevPilot/
 ├── adapters/              # Project type adapters
-│   ├── Contract.php      # Interface definition
-│   └── php/
+│   ├── AdapterContract.php    # Interface definition
+│   ├── AbstractAdapter.php    # Base implementation
+│   └── Php/
 │       └── VanillaPhpAdapter.php
 ├── cli/                 # Command-line interface
 │   ├── devpilot
@@ -103,48 +183,50 @@ DevPilot/
 ├── src/
 │   ├── Config.php      # Configuration management
 │   ├── Discovery.php   # Project discovery
-│   ├── Logger.php      # Operation logging
+│   ├── Logger.php      # Operation logging with redaction
 │   ├── Project.php     # Project model
-│   └── Registry.php    # Project persistence
+│   └── Registry.php    # Project persistence with locking
 ├── tests/               # Unit tests
 │   ├── ConfigTest.php
 │   ├── DiscoveryTest.php
 │   ├── RegistryTest.php
+│   ├── AdapterCompatibilityTest.php
 │   └── TestCase.php
 ├── .claude/             # Claude settings (if any)
 ├── CLAUDE.md            # This architecture doc
-├── cli/
 ├── composer.json
-└── phpunit.xml
+├── phpunit.xml
+└── .gitignore
 ```
+
+---
 
 ## Adding a New Adapter
 
-1. Create adapter directory: `adapters/<type>/<Type>Adapter.php`
+1. Create adapter directory: `adapters/<Type>/<Type>Adapter.php`
 2. Implement `AdapterContract` interface
 3. Extend `AbstractAdapter` for common functionality
 4. Add discovery markers to `Discovery.php`
 
-## Extension Points
+---
 
-### Phase 1B Planned Extensions
+## Future Development Roadmap
 
-1. **Demo Data Generation**: Adapter methods for synthetic data
-2. **Test Execution**: Safe test runner integration
-3. **Deployment Automation**: CLI-driven deploy helpers
-4. **API Key Management**: Secure credential storage
-5. **Project Templates**: Generate new project structures
+| Phase | Scope | Status |
+|-------|-------|--------|
+| Phase 1A | Local core foundation | ✅ Complete |
+| Phase 1B | Universal project integration | Ready for authorization |
+| Phase 2 | Controlled operations & demo data | Pending |
+| Phase 3 | Portfolio admin dashboard | Pending |
+| Phase 4 | AI orchestration & multi-provider | Pending |
+| Future | Automation & extensibility | Planning |
 
-### Future Integration Points
-
-1. **Portfolio Dashboard**: Web UI for DevPilot functions
-2. **LiteLLM Integration**: AI-assisted operations
-3. **Multi-environment Sync**: Cross-environment project management
-4. **Notification System**: Build status alerts
+---
 
 ## Performance Considerations
 
 - Registry loads into memory for fast operations
-- Discovery uses shallow directory traversal (default 5 levels)
+- Discovery uses shallow directory traversal (default 3 levels)
+- Excludes vendor/, node_modules/, .git, build outputs
 - All operations are blocking and synchronous (simplicity over performance)
 - No background processes during discovery
