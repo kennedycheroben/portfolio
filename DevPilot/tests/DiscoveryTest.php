@@ -5,8 +5,56 @@ namespace DevPilot\Tests;
 
 use DevPilot\Discovery;
 
-final class DiscoveryTest extends TestCase
+final class DiscoveryTest
 {
+    private string $testRoot;
+
+    public function setUp(): void
+    {
+        $this->testRoot = sys_get_temp_dir() . '/devpilot-test-' . uniqid();
+        if (!is_dir($this->testRoot)) {
+            mkdir($this->testRoot, 0755, true);
+        }
+    }
+
+    public function tearDown(): void
+    {
+        if (is_dir($this->testRoot)) {
+            $this->removeDirectory($this->testRoot);
+        }
+    }
+
+    private function removeDirectory(string $dir): void
+    {
+        $files = glob($dir . '/*');
+        foreach ($files as $file) {
+            is_dir($file) ? $this->removeDirectory($file) : unlink($file);
+        }
+        rmdir($dir);
+    }
+
+    protected function createTestProject(string $name, array $files = []): string
+    {
+        $path = $this->testRoot . '/' . $name;
+        mkdir($path, 0755, true);
+
+        foreach ($files as $file => $content) {
+            $fullPath = $path . '/' . $file;
+            $dir = dirname($fullPath);
+            if (!is_dir($dir)) {
+                mkdir($dir, 0755, true);
+            }
+            if (is_array($content)) {
+                // Directory with nested content
+                mkdir($fullPath, 0755, true);
+            } else {
+                file_put_contents($path . '/' . $file, $content);
+            }
+        }
+
+        return $path;
+    }
+
     public function testDetectVanillaPhpProject(): void
     {
         $path = $this->createTestProject('vanilla-php', [
@@ -15,8 +63,12 @@ final class DiscoveryTest extends TestCase
 
         $result = Discovery::detect($path);
 
-        $this->assertEquals('php', $result['primaryLanguage']);
-        $this->assertContains('php', $result['technologies']);
+        if ($result['primaryLanguage'] !== 'php') {
+            throw new \AssertionError("Expected php, got {$result['primaryLanguage']}");
+        }
+        if (!in_array('php', $result['technologies'] ?? [])) {
+            throw new \AssertionError("php not in technologies");
+        }
     }
 
     public function testDetectLaravelProject(): void
@@ -29,8 +81,12 @@ final class DiscoveryTest extends TestCase
 
         $result = Discovery::detect($path);
 
-        $this->assertEquals('php', $result['primaryLanguage']);
-        $this->assertContains('laravel', $result['frameworks']);
+        if ($result['primaryLanguage'] !== 'php') {
+            throw new \AssertionError("Expected php, got {$result['primaryLanguage']}");
+        }
+        if (!in_array('laravel', $result['frameworks'] ?? [])) {
+            throw new \AssertionError("laravel not in frameworks");
+        }
     }
 
     public function testDetectNodeProject(): void
@@ -41,8 +97,12 @@ final class DiscoveryTest extends TestCase
 
         $result = Discovery::detect($path);
 
-        $this->assertEquals('javascript', $result['primaryLanguage']);
-        $this->assertContains('node', $result['technologies']);
+        if ($result['primaryLanguage'] !== 'javascript') {
+            throw new \AssertionError("Expected javascript, got {$result['primaryLanguage']}");
+        }
+        if (!in_array('node', $result['technologies'] ?? [])) {
+            throw new \AssertionError("node not in technologies");
+        }
     }
 
     public function testDetectPythonProject(): void
@@ -54,7 +114,9 @@ final class DiscoveryTest extends TestCase
 
         $result = Discovery::detect($path);
 
-        $this->assertEquals('python', $result['primaryLanguage']);
+        if ($result['primaryLanguage'] !== 'python') {
+            throw new \AssertionError("Expected python, got {$result['primaryLanguage']}");
+        }
     }
 
     public function testDetectGitRepository(): void
@@ -66,7 +128,9 @@ final class DiscoveryTest extends TestCase
 
         $result = Discovery::detect($path);
 
-        $this->assertTrue($result['hasGit']);
+        if (!$result['hasGit']) {
+            throw new \AssertionError("Expected hasGit to be true");
+        }
     }
 
     public function testDetectDockerFiles(): void
@@ -78,7 +142,9 @@ final class DiscoveryTest extends TestCase
 
         $result = Discovery::detect($path);
 
-        $this->assertTrue($result['hasDocker']);
+        if (!$result['hasDocker']) {
+            throw new \AssertionError("Expected hasDocker to be true");
+        }
     }
 
     public function testDetectDatabaseFromEnv(): void
@@ -90,21 +156,29 @@ final class DiscoveryTest extends TestCase
 
         $result = Discovery::detect($path);
 
-        $this->assertContains('mysql', $result['databases'] ?? []);
+        if (!in_array('mysql', $result['databases'] ?? [])) {
+            throw new \AssertionError("mysql not in databases");
+        }
     }
 
     public function testInvalidPathThrowsException(): void
     {
-        $this->expectException(\OutOfBoundsException::class);
-
-        Discovery::detect('/nonexistent/path/that/does/not/exist');
+        try {
+            Discovery::detect('/nonexistent/path/that/does/not/exist');
+            throw new \AssertionError("Expected OutOfBoundsException");
+        } catch (\OutOfBoundsException $e) {
+            // Expected
+        }
     }
 
     public function testNonDirectoryThrowsException(): void
     {
-        $this->expectException(\OutOfBoundsException::class);
-
-        Discovery::detect('/etc/hosts');
+        try {
+            Discovery::detect('/etc/hosts');
+            throw new \AssertionError("Expected OutOfBoundsException");
+        } catch (\OutOfBoundsException $e) {
+            // Expected
+        }
     }
 
     public function testMultipleTechnologiesDetected(): void
@@ -118,7 +192,9 @@ final class DiscoveryTest extends TestCase
 
         $result = Discovery::detect($path);
 
-        $this->assertContains('php', $result['technologies']);
+        if (!in_array('php', $result['technologies'] ?? [])) {
+            throw new \AssertionError("php not in technologies");
+        }
     }
 
     public function testDetectTypeScriptProject(): void
@@ -131,8 +207,12 @@ final class DiscoveryTest extends TestCase
 
         $result = Discovery::detect($path);
 
-        $this->assertEquals('typescript', $result['primaryLanguage']);
-        $this->assertContains('typescript', $result['technologies']);
+        if ($result['primaryLanguage'] !== 'typescript') {
+            throw new \AssertionError("Expected typescript, got {$result['primaryLanguage']}");
+        }
+        if (!in_array('typescript', $result['technologies'] ?? [])) {
+            throw new \AssertionError("typescript not in technologies");
+        }
     }
 
     public function testDetectTypeScriptWithoutTsconfig(): void
@@ -144,8 +224,12 @@ final class DiscoveryTest extends TestCase
 
         $result = Discovery::detect($path);
 
-        $this->assertEquals('typescript', $result['primaryLanguage']);
-        $this->assertContains('typescript', $result['technologies']);
+        if ($result['primaryLanguage'] !== 'typescript') {
+            throw new \AssertionError("Expected typescript, got {$result['primaryLanguage']}");
+        }
+        if (!in_array('typescript', $result['technologies'] ?? [])) {
+            throw new \AssertionError("typescript not in technologies");
+        }
     }
 
     public function testDetectJavaScriptProject(): void
@@ -157,8 +241,12 @@ final class DiscoveryTest extends TestCase
 
         $result = Discovery::detect($path);
 
-        $this->assertEquals('javascript', $result['primaryLanguage']);
-        $this->assertContains('javascript', $result['technologies']);
+        if ($result['primaryLanguage'] !== 'javascript') {
+            throw new \AssertionError("Expected javascript, got {$result['primaryLanguage']}");
+        }
+        if (!in_array('javascript', $result['technologies'] ?? [])) {
+            throw new \AssertionError("javascript not in technologies");
+        }
     }
 
     public function testDetectGenericComposerNotLaravel(): void
@@ -170,8 +258,12 @@ final class DiscoveryTest extends TestCase
 
         $result = Discovery::detect($path);
 
-        $this->assertEquals('php', $result['primaryLanguage']);
-        $this->assertNotContains('laravel', $result['frameworks'] ?? []);
+        if ($result['primaryLanguage'] !== 'php') {
+            throw new \AssertionError("Expected php, got {$result['primaryLanguage']}");
+        }
+        if (in_array('laravel', $result['frameworks'] ?? [])) {
+            throw new \AssertionError("laravel should not be in frameworks for generic Composer project");
+        }
     }
 
     public function testDetectLaravelWithFrameworkMarkers(): void
@@ -184,8 +276,12 @@ final class DiscoveryTest extends TestCase
 
         $result = Discovery::detect($path);
 
-        $this->assertEquals('php', $result['primaryLanguage']);
-        $this->assertContains('laravel', $result['frameworks']);
+        if ($result['primaryLanguage'] !== 'php') {
+            throw new \AssertionError("Expected php, got {$result['primaryLanguage']}");
+        }
+        if (!in_array('laravel', $result['frameworks'] ?? [])) {
+            throw new \AssertionError("laravel not in frameworks");
+        }
     }
 
     public function testExcludesVendorDirectory(): void
@@ -198,8 +294,9 @@ final class DiscoveryTest extends TestCase
 
         $result = Discovery::detect($path);
 
-        // Should not scan vendor directory
-        $this->assertEquals('php', $result['primaryLanguage']);
+        if ($result['primaryLanguage'] !== 'php') {
+            throw new \AssertionError("Expected php, got {$result['primaryLanguage']}");
+        }
     }
 
     public function testExcludesNodeModulesDirectory(): void
@@ -212,7 +309,9 @@ final class DiscoveryTest extends TestCase
 
         $result = Discovery::detect($path);
 
-        $this->assertEquals('javascript', $result['primaryLanguage']);
+        if ($result['primaryLanguage'] !== 'javascript') {
+            throw new \AssertionError("Expected javascript, got {$result['primaryLanguage']}");
+        }
     }
 
     public function testExcludesGitDirectory(): void
@@ -224,8 +323,12 @@ final class DiscoveryTest extends TestCase
 
         $result = Discovery::detect($path);
 
-        $this->assertEquals('php', $result['primaryLanguage']);
-        $this->assertTrue($result['hasGit']);
+        if ($result['primaryLanguage'] !== 'php') {
+            throw new \AssertionError("Expected php, got {$result['primaryLanguage']}");
+        }
+        if (!$result['hasGit']) {
+            throw new \AssertionError("Expected hasGit to be true");
+        }
     }
 
     public function testExcludesBuildDirectories(): void
@@ -238,7 +341,9 @@ final class DiscoveryTest extends TestCase
 
         $result = Discovery::detect($path);
 
-        $this->assertEquals('php', $result['primaryLanguage']);
+        if ($result['primaryLanguage'] !== 'php') {
+            throw new \AssertionError("Expected php, got {$result['primaryLanguage']}");
+        }
     }
 
     public function testExcludesCacheDirectories(): void
@@ -250,6 +355,8 @@ final class DiscoveryTest extends TestCase
 
         $result = Discovery::detect($path);
 
-        $this->assertEquals('php', $result['primaryLanguage']);
+        if ($result['primaryLanguage'] !== 'php') {
+            throw new \AssertionError("Expected php, got {$result['primaryLanguage']}");
+        }
     }
 }

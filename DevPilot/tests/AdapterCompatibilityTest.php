@@ -6,13 +6,42 @@ namespace DevPilot\Tests;
 use DevPilot\Adapters\AdapterContract;
 use DevPilot\Adapters\Php\VanillaPhpAdapter;
 
-final class AdapterCompatibilityTest extends TestCase
+final class AdapterCompatibilityTest
 {
+    private string $testPath;
+
+    public function setUp(): void
+    {
+        $this->testPath = sys_get_temp_dir() . '/devpilot-adapter-test-' . uniqid();
+        if (!is_dir($this->testPath)) {
+            mkdir($this->testPath, 0755, true);
+        }
+        file_put_contents($this->testPath . '/index.php', '<?php echo "test"; ?>');
+    }
+
+    public function tearDown(): void
+    {
+        if (is_dir($this->testPath)) {
+            $this->removeDirectory($this->testPath);
+        }
+    }
+
+    private function removeDirectory(string $dir): void
+    {
+        $files = glob($dir . '/*');
+        foreach ($files as $file) {
+            is_dir($file) ? $this->removeDirectory($file) : unlink($file);
+        }
+        rmdir($dir);
+    }
+
     public function testVanillaPhpAdapterImplementsInterface(): void
     {
         $adapterClass = VanillaPhpAdapter::class;
 
-        $this->assertTrue(class_exists($adapterClass), 'VanillaPhpAdapter class exists');
+        if (!class_exists($adapterClass)) {
+            throw new \AssertionError('VanillaPhpAdapter class does not exist');
+        }
 
         $reflection = new \ReflectionClass($adapterClass);
         $interface = new \ReflectionClass(AdapterContract::class);
@@ -21,77 +50,72 @@ final class AdapterCompatibilityTest extends TestCase
             $methodName = $interfaceMethod->getName();
             if ($methodName === '__construct') continue;
 
-            $this->assertTrue(
-                $reflection->hasMethod($methodName),
-                "Adapter implements interface method: {$methodName}"
-            );
+            if (!$reflection->hasMethod($methodName)) {
+                throw new \AssertionError("Adapter implements interface method: {$methodName}");
+            }
 
             $adapterMethod = $reflection->getMethod($methodName);
-            $this->assertEquals(
-                $interfaceMethod->isPublic(),
-                $adapterMethod->isPublic(),
-                "Method {$methodName} has correct visibility"
-            );
+            if ($interfaceMethod->isPublic() !== $adapterMethod->isPublic()) {
+                throw new \AssertionError("Method {$methodName} has correct visibility");
+            }
         }
     }
 
     public function testVanillaPhpAdapterInstantiation(): void
     {
-        $testPath = sys_get_temp_dir() . '/devpilot-adapter-test';
-        if (!is_dir($testPath)) {
-            mkdir($testPath, 0755, true);
+        $adapter = new VanillaPhpAdapter($this->testPath);
+
+        if (!($adapter instanceof VanillaPhpAdapter)) {
+            throw new \AssertionError("Adapter is not instance of VanillaPhpAdapter");
         }
-        file_put_contents($testPath . '/index.php', '<?php echo "test"; ?>');
-
-        $adapter = new VanillaPhpAdapter($testPath);
-
-        $this->assertInstanceOf(VanillaPhpAdapter::class, $adapter);
-        $this->assertSame($testPath, $adapter->getProjectPath());
+        if ($adapter->getProjectPath() !== $this->testPath) {
+            throw new \AssertionError("Adapter project path mismatch");
+        }
     }
 
     public function testGetAvailableCommandsIsInstanceMethod(): void
     {
-        $testPath = sys_get_temp_dir() . '/devpilot-adapter-test';
-        file_put_contents($testPath . '/index.php', '<?php echo "test"; ?>');
-
-        $adapter = new VanillaPhpAdapter($testPath);
+        $adapter = new VanillaPhpAdapter($this->testPath);
 
         $commands = $adapter->getAvailableCommands();
 
-        $this->assertIsArray($commands);
-        $this->assertArrayHasKey('build', $commands);
-        $this->assertArrayHasKey('test', $commands);
-        $this->assertArrayHasKey('serve', $commands);
-        $this->assertArrayHasKey('lint', $commands);
-        $this->assertArrayHasKey('generateDemoData', $commands);
+        if (!is_array($commands)) {
+            throw new \AssertionError("Commands should be array");
+        }
+        foreach (['build', 'test', 'serve', 'lint', 'generateDemoData'] as $key) {
+            if (!array_key_exists($key, $commands)) {
+                throw new \AssertionError("Missing command key: {$key}");
+            }
+        }
     }
 
     public function testGetSupportedStackReturnsValidArray(): void
     {
         $stack = VanillaPhpAdapter::getSupportedStack();
 
-        $this->assertIsArray($stack);
-        $this->assertArrayHasKey('php', $stack);
-        $this->assertNotEmpty($stack['php']);
+        if (!is_array($stack)) {
+            throw new \AssertionError("Supported stack should be array");
+        }
+        if (!array_key_exists('php', $stack)) {
+            throw new \AssertionError("Missing php key in supported stack");
+        }
+        if (empty($stack['php'])) {
+            throw new \AssertionError("PHP version constraint should not be empty");
+        }
 
         $keys = array_keys($stack);
-        $this->assertCount(1, $keys, 'Should have exactly one PHP key (no duplicates)');
-
-        @unlink(sys_get_temp_dir() . '/devpilot-adapter-test/index.php');
-        @rmdir(sys_get_temp_dir() . '/devpilot-adapter-test');
+        if (count($keys) !== 1) {
+            throw new \AssertionError("Should have exactly one PHP key (no duplicates)");
+        }
     }
 
     public function testAdapterSupportsValidPath(): void
     {
-        $testPath = sys_get_temp_dir() . '/devpilot-adapter-test';
-        file_put_contents($testPath . '/index.php', '<?php echo "test"; ?>');
+        $supports = VanillaPhpAdapter::supports($this->testPath);
 
-        $supports = VanillaPhpAdapter::supports($testPath);
-
-        $this->assertTrue($supports);
-
-        @unlink($testPath . '/index.php');
-        @rmdir($testPath);
+        if (!$supports) {
+            throw new \AssertionError("Adapter should support valid path");
+        }
     }
 
     public function testAdapterSupportsInvalidPath(): void
@@ -100,37 +124,52 @@ final class AdapterCompatibilityTest extends TestCase
 
         $supports = VanillaPhpAdapter::supports($testPath);
 
-        $this->assertFalse($supports);
+        if ($supports) {
+            throw new \AssertionError("Adapter should not support invalid path");
+        }
     }
 
     public function testAdapterInterfaceCompatibility(): void
     {
-        $testPath = sys_get_temp_dir() . '/devpilot-adapter-test';
-        file_put_contents($testPath . '/index.php', '<?php echo "test"; ?>');
+        $adapter = new VanillaPhpAdapter($this->testPath);
 
-        $adapter = new VanillaPhpAdapter($testPath);
-
-        // Test all interface methods can be called
-        $this->assertIsString($adapter::getVersion());
-        $this->assertIsArray($adapter::getSupportedStack());
-        $this->assertIsBool($adapter::supports($testPath));
+        if (!is_string($adapter::getVersion())) {
+            throw new \AssertionError("getVersion should return string");
+        }
+        if (!is_array($adapter::getSupportedStack())) {
+            throw new \AssertionError("getSupportedStack should return array");
+        }
+        if (!is_bool($adapter::supports($this->testPath))) {
+            throw new \AssertionError("supports should return bool");
+        }
 
         $discovered = $adapter->discover();
-        $this->assertIsArray($discovered);
-        $this->assertArrayHasKey('name', $discovered);
-        $this->assertArrayHasKey('type', $discovered);
+        if (!is_array($discovered)) {
+            throw new \AssertionError("discover should return array");
+        }
+        if (!array_key_exists('name', $discovered)) {
+            throw new \AssertionError("discover missing name key");
+        }
+        if (!array_key_exists('type', $discovered)) {
+            throw new \AssertionError("discover missing type key");
+        }
 
         $health = $adapter->checkHealth();
-        $this->assertIsArray($health);
-        $this->assertArrayHasKey('healthy', $health);
+        if (!is_array($health)) {
+            throw new \AssertionError("checkHealth should return array");
+        }
+        if (!array_key_exists('healthy', $health)) {
+            throw new \AssertionError("health missing 'healthy' key");
+        }
 
         $commands = $adapter->getAvailableCommands();
-        $this->assertIsArray($commands);
+        if (!is_array($commands)) {
+            throw new \AssertionError("getAvailableCommands should return array");
+        }
 
         $demoData = $adapter->generateDemoData([]);
-        $this->assertIsArray($demoData);
-
-        @unlink($testPath . '/index.php');
-        @rmdir($testPath);
+        if (!is_array($demoData)) {
+            throw new \AssertionError("generateDemoData should return array");
+        }
     }
 }

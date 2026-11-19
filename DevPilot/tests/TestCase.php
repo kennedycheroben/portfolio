@@ -3,18 +3,15 @@ declare(strict_types=1);
 
 namespace DevPilot\Tests;
 
-use PHPUnit\Framework\TestCase as BaseTestCase;
-use DevPilot\Config;
-use DevPilot\Discovery;
-
-abstract class TestCase extends BaseTestCase
+/**
+ * Base test case class without PHPUnit dependency.
+ */
+abstract class TestCase
 {
     protected static string $testRoot;
 
     public static function setUpBeforeClass(): void
     {
-        parent::setUpBeforeClass();
-
         self::$testRoot = sys_get_temp_dir() . '/devpilot-test-' . uniqid();
         if (!is_dir(self::$testRoot)) {
             mkdir(self::$testRoot, 0755, true);
@@ -23,8 +20,6 @@ abstract class TestCase extends BaseTestCase
 
     public static function tearDownAfterClass(): void
     {
-        parent::tearDownAfterClass();
-
         if (is_dir(self::$testRoot)) {
             self::removeDirectory(self::$testRoot);
         }

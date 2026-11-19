@@ -8,7 +8,7 @@ use OutOfBoundsException;
 final class Discovery
 {
     private const MARKERS = [
-        'php' => ['composer.json'],
+        'php' => ['composer.json', 'artisan', 'index.php'],
         'laravel' => ['artisan', 'bootstrap/app.php'],
         'symfony' => ['symfony.lock', 'bin/console'],
         'django' => ['manage.py', 'settings.py'],
@@ -17,7 +17,7 @@ final class Discovery
         'vue' => ['vue.config.js', 'vite.config.js', 'vue.config.ts'],
         'react' => ['react-scripts', 'react-app'],
         'javascript' => ['package.json', 'pnpm-lock.yaml', 'yarn.lock'],
-        'typescript' => ['tsconfig.json', 'tsconfig.app.json'],
+        'typescript' => ['tsconfig.json', 'tsconfig.app.json', '.ts', '.tsx'],
         'python' => ['requirements.txt', 'pyproject.toml', 'setup.py', 'Pipfile'],
         'node' => ['package.json'],
         'dockerfile' => ['Dockerfile', 'docker-compose.yml'],
@@ -29,10 +29,10 @@ final class Discovery
     ];
 
     private const EXCLUDE_DIRS = [
-        '.git', 'vendor', 'node_modules', '.cache', 'build', 'dist',
+        'vendor', 'node_modules', '.cache', 'build', 'dist',
         '.idea', '.vscode', '__pycache__', '.pytest_cache', 'coverage',
         'var/cache', 'var/log', 'storage/framework', 'bootstrap/cache',
-        'target', 'bin', 'obj', '.git', 'node_modules', 'vendor',
+        'target', 'bin', 'obj', 'node_modules', 'vendor',
     ];
 
     public static function detect(string $path): array
@@ -64,6 +64,17 @@ final class Discovery
                     $matched = true;
                     $matchedMarker = $marker;
                     break;
+                }
+
+                // Extension-style markers (e.g. '.ts', '.tsx') match any file with that extension
+                if (str_starts_with($marker, '.')) {
+                    foreach ($files as $fn) {
+                        if ($fn !== $marker && str_ends_with($fn, $marker)) {
+                            $matched = true;
+                            $matchedMarker = $marker;
+                            break 2;
+                        }
+                    }
                 }
 
                 $markerPath = self::findFile($filePathList, $marker);
@@ -170,51 +181,82 @@ final class Discovery
 
     private static function detectPrimaryLanguage(array $paths, array $fileNames): string
     {
-        $languages = [
-            'php' => ['composer.json', 'artisan', 'php', 'phtml'],
-            'typescript' => ['tsconfig.json', 'tsconfig.app.json', 'ts', 'tsx'],
-            'javascript' => ['package.json', 'js', 'jsx', 'mjs', 'cjs'],
-            'python' => ['requirements.txt', 'pyproject.toml', 'py', 'setup.py'],
-            'java' => ['pom.xml', 'build.gradle', 'java'],
-            'go' => ['go.mod', 'go.sum', 'go'],
-            'rust' => ['Cargo.toml', 'rs'],
-            'csharp' => ['.csproj', '.sln', 'cs'],
-            'ruby' => ['Gemfile', 'rb', 'rakefile'],
-        ];
+        // Check for TypeScript first - check both file names and full paths
+        $hasTsconfig = in_array('tsconfig.json', $fileNames, true) || self::findFile($paths, 'tsconfig.json') !== null;
+        $hasTsFiles = false;
 
-        // Count evidence for each language
-        $languageScores = [];
-
-        foreach ($languages as $lang => $indicators) {
-            $score = 0;
-            foreach ($indicators as $indicator) {
-                if (in_array($indicator, $fileNames, true)) {
-                    $score += 10;
-                }
-                if (self::findFile($paths, $indicator) !== null) {
-                    $score += 5;
-                }
-                // Count file extensions
-                $extCount = 0;
-                foreach ($fileNames as $fn) {
-                    if (str_ends_with($fn, '.' . $indicator) || ($indicator !== 'composer.json' && $indicator !== 'package.json' && str_contains($fn, '.' . $indicator))) {
-                        $extCount++;
-                    }
-                }
-                $score += min($extCount * 2, 50);
+        // Check both file names and full paths for .ts/.tsx files
+        foreach ($fileNames as $fn) {
+            if (str_ends_with($fn, '.ts') || str_ends_with($fn, '.tsx')) {
+                $hasTsFiles = true;
+                break;
             }
-
-            if ($score > 0) {
-                $languageScores[$lang] = $score;
+        }
+        // Also check full paths
+        if (!$hasTsFiles) {
+            foreach ($paths as $path) {
+                if (str_ends_with($path, '.ts') || str_ends_with($path, '.tsx')) {
+                    $hasTsFiles = true;
+                    break;
+                }
             }
         }
 
-        if (empty($languageScores)) {
-            return 'unknown';
+        if (in_array('tsconfig.json', $fileNames, true) || self::findFile($paths, 'tsconfig.json') !== null || $hasTsFiles) {
+            return 'typescript';
         }
 
-        // Return language with highest score
-        arsort($languageScores);
-        return array_key_first($languageScores);
+        // Check for strong JavaScript indicators
+        $hasPackageJson = in_array('package.json', $fileNames, true) || self::findFile($paths, 'package.json') !== null;
+
+        // Check for PHP
+        $hasPhp = false;
+        foreach ($fileNames as $fn) {
+            if (str_ends_with($fn, '.php') || str_ends_with($fn, '.phtml')) {
+                return 'php';
+            }
+        }
+        foreach ($paths as $path) {
+            if (str_ends_with($path, '.php') || str_ends_with($path, '.phtml')) {
+                return 'php';
+            }
+        }
+        if (in_array('composer.json', $fileNames, true) || in_array('artisan', $fileNames, true) ||
+            self::findFile($paths, 'composer.json') !== null || self::findFile($paths, 'artisan') !== null) {
+            return 'php';
+        }
+
+        // Check for Python
+        foreach ($fileNames as $fn) {
+            if (str_ends_with($fn, '.py')) {
+                return 'python';
+            }
+        }
+        foreach ($paths as $path) {
+            if (str_ends_with($path, '.py')) {
+                return 'python';
+            }
+        }
+        if (in_array('requirements.txt', $fileNames, true) || in_array('pyproject.toml', $fileNames, true) ||
+            in_array('setup.py', $fileNames, true) || in_array('Pipfile', $fileNames, true) ||
+            self::findFile($paths, 'requirements.txt') !== null || self::findFile($paths, 'pyproject.toml') !== null) {
+            return 'python';
+        }
+
+        // Check for JavaScript (but not TypeScript)
+        if ($hasPackageJson || self::findFile($paths, 'package.json') !== null) {
+            return 'javascript';
+        }
+
+        // Check for other languages by extension
+        foreach ($paths as $path) {
+            if (str_ends_with($path, '.java')) return 'java';
+            if (str_ends_with($path, '.go')) return 'go';
+            if (str_ends_with($path, '.rs')) return 'rust';
+            if (str_ends_with($path, '.cs')) return 'csharp';
+            if (str_ends_with($path, '.rb')) return 'ruby';
+        }
+
+        return 'unknown';
     }
 }
