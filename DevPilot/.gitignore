@@ -3,6 +3,9 @@
 # Runtime data
 registry/projects.json
 
+# Audit reports (contain infrastructure details)
+PHASE0_AUDIT.md
+
 # Logs
 logs/
 *.log
