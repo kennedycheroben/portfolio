@@ -1,0 +1,53 @@
+# DevPilot - Git Ignore Patterns
+
+# Runtime data
+registry/projects.json
+
+# Logs
+logs/
+*.log
+
+# Vendor dependencies
+vendor/
+
+# Node modules (if any)
+node_modules/
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# IDE configuration
+.claude/
+
+# Environment files
+.env
+.env.local
+.env.production
+
+# PHP files
+*.cache
+*.tmp
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Backup files
+*.bak
+*.backup
+
+# PHPUnit caches
+.phpunit.cache/
+
+# Build artifacts
+/dist/
+/build/

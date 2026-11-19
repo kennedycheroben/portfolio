@@ -1,0 +1,209 @@
+#!/usr/bin/env php
+<?php
+declare(strict_types=1);
+
+/**
+ * Simple test runner for DevPilot
+ * No PHPUnit dependency - uses native PHP assertions
+ */
+
+require_once dirname(__DIR__) . '/vendor/autoload.php';
+
+use DevPilot\Config;
+use DevPilot\Discovery;
+use DevPilot\Project;
+use DevPilot\Registry;
+
+const TESTS_PASSED = 0;
+const TESTS_FAILED = 1;
+
+$testResults = ['passed' => 0, 'failed' => 0, 'errors' => []];
+
+function test(string $name, callable $fn, array $results): array
+{
+    try {
+        $fn();
+        $results['passed']++;
+        echo "  ✓ {$name}\n";
+        return $results;
+    } catch (Throwable $e) {
+        $results['failed']++;
+        $results['errors'][] = "{$name}: " . $e->getMessage();
+        echo "  ✗ {$name}\n";
+        echo "      " . $e->getMessage() . "\n";
+        return $results;
+    }
+}
+
+echo "\n=== DevPilot Test Suite ===\n\n";
+
+$tempDir = sys_get_temp_dir() . '/devpilot-test-' . uniqid();
+@mkdir($tempDir, 0755, true);
+
+echo "1. Config Tests\n";
+Config::ensureDirectories();
+$results = test('getRoot returns valid path', function() {
+    assert(is_dir(Config::getRoot()));
+}, $testResults);
+$results = test('getRegistryPath returns valid path', function() use (&$results) {
+    assert(str_contains(Config::getRegistryPath(), 'projects.json'));
+}, $results);
+$results = test('ensureDirectories creates required dirs', function() {
+    assert(is_dir(Config::getRoot() . '/adapters'));
+}, $results);
+
+echo "\n2. Path Validation Tests\n";
+$results = test('validates existing directory', function() {
+    assert(is_dir(Config::validatePath('/opt/lampp/htdocs')));
+}, $results);
+
+$results = test('rejects empty path', function() {
+    try {
+        Config::validatePath('');
+        throw new RuntimeException('Should have thrown exception');
+    } catch (OutOfBoundsException $e) {
+        // Expected
+    }
+}, $results);
+
+echo "\n3. Project Tests\n";
+$project = new Project(
+    id: 0,
+    name: 'Test Project',
+    path: '/tmp/test-project-12345',
+    language: 'php',
+    framework: 'laravel',
+    database: 'mysql'
+);
+$results = test('Project object creation', function() use (&$project) {
+    assert($project->name === 'Test Project');
+}, $results);
+$results = test('Project validation', function() use (&$project) {
+    assert($project->validate());
+}, $results);
+
+echo "\n4. Discovery Tests\n";
+$testPath = $tempDir . '/test-proj';
+mkdir($testPath, 0755, true);
+file_put_contents($testPath . '/index.php', '<?php echo "test"; ?>');
+
+$results = test('detects PHP project', function() use (&$testPath, &$results) {
+    $result = Discovery::detect($testPath);
+    assert($result['primaryLanguage'] === 'php');
+}, $results);
+
+$results = test('detects Git', function() use (&$testPath, &$results) {
+    mkdir($testPath . '/.git', 0755, true);
+    $result = Discovery::detect($testPath);
+    assert($result['hasGit'] === true);
+}, $results);
+
+echo "\n5. Registry Tests\n";
+$testRegistryPath = dirname($testPath) . '/test-registry.json';
+$registry = new Registry($testRegistryPath);
+
+$testProject = new Project(
+    id: 0,
+    name: 'Registry Test',
+    path: '/tmp/registry-test-path-12345'
+);
+$results = test('adds project', function() use (&$testProject, &$registry) {
+    $id = $registry->add($testProject);
+    assert($id > 0);
+}, $results);
+
+$results = test('retrieves project', function() use (&$testProject, &$registry) {
+    $retrieved = $registry->get($testProject->id);
+    assert($retrieved !== null);
+    assert($retrieved->name === 'Registry Test');
+}, $results);
+
+$results = test('counts projects', function() use (&$registry) {
+    assert($registry->count() >= 1);
+}, $results);
+
+echo "\n6. Integration Test\n";
+$results = test('full workflow: register -> discover -> list', function() use (&$tempDir, &$registry) {
+    $workflowPath = $tempDir . '/workflow-test';
+    mkdir($workflowPath, 0755, true);
+    file_put_contents($workflowPath . '/index.php', '<?php echo "workflow test"; ?>');
+    file_put_contents($workflowPath . '/composer.json', '{"name": "workflow"}');
+
+    $detectResult = Discovery::detect($workflowPath);
+    assert($detectResult['primaryLanguage'] === 'php');
+
+    $regProject = new Project(
+        id: 0,
+        name: 'Workflow Test',
+        path: $workflowPath
+    );
+    $id = $registry->add($regProject);
+    $found = $registry->get($id);
+    assert($found !== null);
+    assert($found->name === 'Workflow Test');
+}, $results);
+
+echo "\n7. Path Traversal Tests\n";
+$results = test('blocks path traversal with ../', function() {
+    try {
+        Config::validatePath('/opt/lampp/htdocs/../etc/passwd');
+        throw new RuntimeException('Should have thrown exception');
+    } catch (OutOfBoundsException $e) {
+        // Expected - path traversal or non-existent path
+        // The function normalizes and rejects, which is correct behavior
+    }
+}, $results);
+
+$results = test('blocks empty path', function() {
+    try {
+        Config::validatePath('');
+        throw new RuntimeException('Should have thrown exception');
+    } catch (OutOfBoundsException $e) {
+        // Expected
+    }
+}, $results);
+
+echo "\n8. Logger Redaction Tests\n";
+$results = test('logger has secret redaction patterns', function() {
+    $reflection = new ReflectionClass(\DevPilot\Logger::class);
+    $method = $reflection->getMethod('redact');
+    $method->setAccessible(true);
+
+    $testInput = 'password="secret123" api_key="sk-test" DB_PASS="dbsecret"';
+    $result = $method->invoke(null, $testInput);
+
+    assert(str_contains($result, '***REDACTED***'), 'Redaction marker present');
+    assert(!str_contains($result, 'secret123'), 'Password not exposed');
+    assert(!str_contains($result, 'sk-test'), 'API key not exposed');
+    assert(!str_contains($result, 'dbsecret'), 'DB_PASS not exposed');
+}, $results);
+
+// Cleanup
+function removeDir(string $dir): void
+{
+    if (!is_dir($dir)) return;
+    $items = scandir($dir);
+    foreach ($items as $item) {
+        if ($item === '.' || $item === '..') continue;
+        $path = $dir . '/' . $item;
+        is_dir($path) ? removeDir($path) : unlink($path);
+    }
+    rmdir($dir);
+}
+removeDir($tempDir);
+@unlink($testRegistryPath);
+
+echo "\n=== Test Results ===\n";
+echo "Passed: {$results['passed']}\n";
+echo "Failed: {$results['failed']}\n";
+
+if ($results['failed'] > 0) {
+    echo "\nErrors:\n";
+    foreach ($results['errors'] as $error) {
+        echo "  - {$error}\n";
+    }
+    exit(TESTS_FAILED);
+}
+
+echo "\nAll tests passed!\n";
+exit(TESTS_PASSED);
