@@ -9,19 +9,22 @@ final class Logger
 {
     private static ?string $logFile = null;
 
-    private static array $sensitiveKeys = [
+    // Canonical sensitive key names (lowercase, no separators)
+    private static array $canonicalSensitiveKeys = [
         'password',
         'passwd',
         'secret',
         'token',
-        'api_key',
-        'api-key',
+        'apikey',
+        'apikey',
         'authorization',
-        'access_key',
-        'private_key',
-        'credential',
-        'db_pass',
-        'db_password',
+        'accesstoken',
+        'accesstoken',
+        'refreshtoken',
+        'clientsecret',
+        'databasepassword',
+        'dbpass',
+        'dbpassword',
     ];
 
     public static function init(string $root): void
@@ -74,10 +77,28 @@ final class Logger
         self::log('DEBUG', $message, $context);
     }
 
+    private static function normalizeKey(string $key): string
+    {
+        // Convert to lowercase and remove common separators
+        return strtolower(preg_replace('/[^a-z0-9]+/i', '', $key));
+    }
+
+    private static function isSensitiveKey(string $key): bool
+    {
+        $normalized = self::normalizeKey($key);
+        foreach (self::$canonicalSensitiveKeys as $canonical) {
+            if (str_contains($normalized, $canonical) || $canonical === $normalized) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static function redactMessage(string $message): string
     {
-        foreach (self::$sensitiveKeys as $key) {
-            $pattern = '/' . preg_quote($key, '/') . '["\']?\s*[:=]\s*["\']?[^"\'\s,}]+/i';
+        foreach (self::$canonicalSensitiveKeys as $key) {
+            // Match key with various separators: key="value", key='value', key=value, key : value
+            $pattern = '/' . preg_quote($key, '/') . '[_-]?["\']?\s*[:=]\s*["\']?[^"\'\s,}]+/i';
             $message = preg_replace($pattern, $key . '="***REDACTED***"', $message);
         }
 
@@ -89,17 +110,7 @@ final class Logger
         $redacted = [];
 
         foreach ($context as $key => $value) {
-            $lowerKey = strtolower($key);
-            $isSensitive = false;
-
-            foreach (self::$sensitiveKeys as $sensitiveKey) {
-                if (str_contains($lowerKey, $sensitiveKey)) {
-                    $isSensitive = true;
-                    break;
-                }
-            }
-
-            if ($isSensitive) {
+            if (self::isSensitiveKey($key)) {
                 $redacted[$key] = '***REDACTED***';
             } elseif (is_string($value)) {
                 $redacted[$key] = self::redactMessage($value);

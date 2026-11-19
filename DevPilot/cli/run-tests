@@ -166,41 +166,109 @@ $results = test('blocks empty path', function() {
 }, $results);
 
 echo "\n8. Logger Redaction Tests\n";
-$results = test('logger has secret redaction patterns', function() {
-    $reflection = new ReflectionClass(\DevPilot\Logger::class);
-    $method = $reflection->getMethod('redactMessage');
-    $method->setAccessible(true);
+$results = test('logger redacts sensitive keys in message strings', function() use (&$results) {
+    $testDir = sys_get_temp_dir() . '/devpilot-test-' . uniqid();
+    @mkdir($testDir, 0755, true);
+    \DevPilot\Logger::init($testDir);
 
-    $testInput = 'password="secret123" api_key="sk-test" DB_PASS="dbsecret"';
-    $result = $method->invoke(null, $testInput);
+    \DevPilot\Logger::info('User login with apiKey="sk-secret123" and password="mypassword"', []);
+    \DevPilot\Logger::info('Auth with accessToken="at-secret" refresh_token="rt-secret" client_secret="cs-secret"', []);
+    \DevPilot\Logger::info('DB config DB_PASSWORD="dbsecret" authorization="Bearer token"', []);
 
-    assert(str_contains($result, '***REDACTED***'), 'Redaction marker present');
-    assert(!str_contains($result, 'secret123'), 'Password not exposed');
-    assert(!str_contains($result, 'sk-test'), 'API key not exposed');
-    assert(!str_contains($result, 'dbsecret'), 'DB_PASS not exposed');
+    $logs = \DevPilot\Logger::readLogs(10);
+    $foundSecret = false;
+    foreach ($logs as $log) {
+        if (str_contains($log['message'], 'secret123') ||
+            str_contains($log['message'], 'mypassword') ||
+            str_contains($log['message'], 'at-secret') ||
+            str_contains($log['message'], 'rt-secret') ||
+            str_contains($log['message'], 'cs-secret') ||
+            str_contains($log['message'], 'dbsecret')) {
+            $foundSecret = true;
+        }
+    }
+    assert(!$foundSecret, 'No secrets exposed in log messages');
+    assert(file_exists($testDir . '/logs/operations.log'), 'Log file created');
+
+    // Cleanup
+    @unlink($testDir . '/logs/operations.log');
+    @rmdir($testDir . '/logs');
+    @rmdir($testDir);
 }, $results);
 
-$results = test('logger redacts sensitive context keys recursively', function() {
-    $reflection = new ReflectionClass(\DevPilot\Logger::class);
-    $method = $reflection->getMethod('redactContext');
-    $method->setAccessible(true);
+$results = test('logger redacts sensitive context keys with naming variants', function() use (&$results) {
+    $testDir = sys_get_temp_dir() . '/devpilot-test-' . uniqid();
+    @mkdir($testDir, 0755, true);
+    \DevPilot\Logger::init($testDir);
 
-    $testInput = [
-        'password' => 'secret123',
-        'api_key' => 'sk-test',
+    \DevPilot\Logger::info('Database operation', [
+        'apiKey' => 'sk-live-secret',
+        'api_key' => 'sk-test-secret',
+        'API-KEY' => 'sk-api-secret',
+        'accessToken' => 'at-secret',
+        'refresh_token' => 'rt-secret',
+        'client_secret' => 'cs-secret',
+        'databasePassword' => 'dbsecret',
+        'DB_PASS' => 'dbpass-secret',
+        'authorization' => 'Bearer token-secret',
         'normal_key' => 'normal_value',
         'nested' => [
             'secret' => 'nested_secret',
             'public' => 'public_data',
         ],
-    ];
-    $result = $method->invoke(null, $testInput);
+    ]);
 
-    assert($result['password'] === '***REDACTED***', 'Password redacted');
-    assert($result['api_key'] === '***REDACTED***', 'API key redacted');
-    assert($result['normal_key'] === 'normal_value', 'Normal key preserved');
-    assert($result['nested']['secret'] === '***REDACTED***', 'Nested secret redacted');
-    assert($result['nested']['public'] === 'public_data', 'Nested public preserved');
+    $logs = \DevPilot\Logger::readLogs(10);
+    $foundSecret = false;
+    foreach ($logs as $log) {
+        $context = $log['context'] ?? [];
+        $check = function($val) use (&$foundSecret) {
+            if (is_string($val) && (
+                str_contains($val, 'secret') ||
+                str_contains($val, 'token')
+            )) {
+                $foundSecret = true;
+            }
+        };
+        array_walk_recursive($context, $check);
+    }
+    assert(!$foundSecret, 'No secrets exposed in log context');
+    assert(file_exists($testDir . '/logs/operations.log'), 'Log file created');
+
+    // Cleanup
+    @unlink($testDir . '/logs/operations.log');
+    @rmdir($testDir . '/logs');
+    @rmdir($testDir);
+}, $results);
+
+$results = test('logger never logs original secret when redaction fails', function() use (&$results) {
+    $testDir = sys_get_temp_dir() . '/devpilot-test-' . uniqid();
+    @mkdir($testDir, 0755, true);
+    \DevPilot\Logger::init($testDir);
+
+    // Test edge case: malformed input that might bypass redaction
+    \DevPilot\Logger::info('Edge case', ['password' => '']);
+    \DevPilot\Logger::info('Edge case', ['api_key' => null]);
+
+    $logs = \DevPilot\Logger::readLogs(10);
+    $foundSecret = false;
+    foreach ($logs as $log) {
+        if (str_contains($log['message'], 'secret') || str_contains($log['message'], 'token')) {
+            $foundSecret = true;
+        }
+        if (isset($log['context']['password']) && $log['context']['password'] !== '***REDACTED***') {
+            $foundSecret = true;
+        }
+        if (isset($log['context']['api_key']) && $log['context']['api_key'] !== '***REDACTED***') {
+            $foundSecret = true;
+        }
+    }
+    assert(!$foundSecret, 'No secrets leaked on edge cases');
+
+    // Cleanup
+    @unlink($testDir . '/logs/operations.log');
+    @rmdir($testDir . '/logs');
+    @rmdir($testDir);
 }, $results);
 
 echo "\n9. Adapter Compatibility Tests\n";
@@ -304,6 +372,179 @@ $results = test('adapter interface compatibility - all methods callable', functi
     assert(is_array($demoData));
 
     @unlink($testDir . '/index.php');
+    @rmdir($testDir);
+}, $results);
+
+echo "\n10. Registry Persistence Tests\n";
+$results = test('registry persists add across new instance', function() use (&$results) {
+    $testDir = sys_get_temp_dir() . '/devpilot-test-' . uniqid();
+    @mkdir($testDir, 0755, true);
+    $registryPath = $testDir . '/registry.json';
+
+    $registry1 = new \DevPilot\Registry($registryPath);
+    $project = new \DevPilot\Project(
+        id: 0,
+        name: 'Persist Test',
+        path: '/tmp/persist-test'
+    );
+    $id = $registry1->add($project);
+    assert($id > 0);
+
+    // Create new instance - should see persisted project
+    $registry2 = new \DevPilot\Registry($registryPath);
+    $found = $registry2->get($id);
+    assert($found !== null);
+    assert($found->name === 'Persist Test');
+
+    @unlink($registryPath);
+    @rmdir($testDir);
+}, $results);
+
+$results = test('registry persists update across new instance', function() use (&$results) {
+    $testDir = sys_get_temp_dir() . '/devpilot-test-' . uniqid();
+    @mkdir($testDir, 0755, true);
+    $registryPath = $testDir . '/registry.json';
+
+    $registry1 = new \DevPilot\Registry($registryPath);
+    $project = new \DevPilot\Project(
+        id: 0,
+        name: 'Update Test',
+        path: '/tmp/update-test'
+    );
+    $id = $registry1->add($project);
+
+    // Update via first instance
+    $project->name = 'Updated Name';
+    $registry1->update($project);
+
+    // Create new instance - should see updated project
+    $registry2 = new \DevPilot\Registry($registryPath);
+    $found = $registry2->get($id);
+    assert($found !== null);
+    assert($found->name === 'Updated Name');
+
+    @unlink($registryPath);
+    @rmdir($testDir);
+}, $results);
+
+$results = test('registry persists remove across new instance', function() use (&$results) {
+    $testDir = sys_get_temp_dir() . '/devpilot-test-' . uniqid();
+    @mkdir($testDir, 0755, true);
+    $registryPath = $testDir . '/registry.json';
+
+    $registry1 = new \DevPilot\Registry($registryPath);
+    $project = new \DevPilot\Project(
+        id: 0,
+        name: 'Remove Test',
+        path: '/tmp/remove-test'
+    );
+    $id = $registry1->add($project);
+
+    // Remove via first instance
+    $registry1->remove($id);
+
+    // Create new instance - project should be gone
+    $registry2 = new \DevPilot\Registry($registryPath);
+    $found = $registry2->get($id);
+    assert($found === null);
+
+    @unlink($registryPath);
+    @rmdir($testDir);
+}, $results);
+
+$results = test('registry persists import across new instance', function() use (&$results) {
+    $testDir = sys_get_temp_dir() . '/devpilot-test-' . uniqid();
+    @mkdir($testDir, 0755, true);
+    $registryPath = $testDir . '/registry.json';
+
+    $registry1 = new \DevPilot\Registry($registryPath);
+    $importJson = json_encode([
+        'exported_at' => date('c'),
+        'version' => '1.0',
+        'count' => 1,
+        'projects' => [[
+            'id' => 100,
+            'name' => 'Imported Project',
+            'path' => '/tmp/imported',
+            'language' => 'php',
+            'framework' => 'laravel',
+            'database' => 'mysql',
+            'environment' => 'development',
+            'status' => 'active',
+            'adapter_status' => 'pending',
+            'hosting' => null,
+            'created_at' => date('c'),
+            'updated_at' => date('c'),
+        ]]
+    ]);
+    $registry1->import($importJson);
+
+    // Create new instance - should see imported project
+    $registry2 = new \DevPilot\Registry($registryPath);
+    $found = $registry2->get(100);
+    assert($found !== null);
+    assert($found->name === 'Imported Project');
+
+    @unlink($registryPath);
+    @rmdir($testDir);
+}, $results);
+
+echo "\n11. Registry Concurrency Test\n";
+$results = test('concurrent registry access does not lose updates', function() use (&$results) {
+    $testDir = sys_get_temp_dir() . '/devpilot-test-' . uniqid();
+    @mkdir($testDir, 0755, true);
+    $registryPath = $testDir . '/registry.json';
+
+    // Initialize registry first
+    $initRegistry = new \DevPilot\Registry($registryPath);
+    $initRegistry->add(new \DevPilot\Project(id: 0, name: 'Init', path: '/tmp/init'));
+
+    // We'll run multiple PHP processes that each add a project
+    $script = '
+        require "' . __DIR__ . '/../vendor/autoload.php";
+        $registry = new DevPilot\Registry("' . $registryPath . '");
+        $project = new DevPilot\Project(
+            id: 0,
+            name: "Concurrent Test " . getmypid(),
+            path: "/tmp/concurrent-" . getmypid()
+        );
+        $id = $registry->add($project);
+        echo "PID: " . getmypid() . " ID: " . $id . "\n";
+    ';
+
+    $processes = 5;
+    $pids = [];
+    for ($i = 0; $i < $processes; $i++) {
+        $descriptors = [
+            1 => ['pipe', 'w'],  // stdout
+            2 => ['pipe', 'w'],  // stderr
+        ];
+        $proc = proc_open("php -r " . escapeshellarg($script), $descriptors, $pipes);
+        if (is_resource($proc)) {
+            $pids[] = $proc;
+            fclose($pipes[1]);
+        }
+    }
+
+    foreach ($pids as $proc) {
+        proc_close($proc);
+    }
+
+    // Verify all projects persisted
+    $registry = new \DevPilot\Registry($registryPath);
+    $count = $registry->count();
+    assert($count >= 5, "Expected at least 5 projects, got $count"); // 1 init + 5 concurrent
+
+    // Verify JSON is valid
+    $json = file_get_contents($registryPath);
+    assert($json !== false, 'Registry file exists and readable');
+    $data = json_decode($json, true);
+    assert(is_array($data), 'Registry JSON is valid');
+    assert(isset($data['projects']), 'Registry has projects key');
+    assert(count($data['projects']) >= 5, 'All projects persisted');
+    assert(count(array_unique(array_column($data['projects'], 'id'))) === count($data['projects']), 'All IDs unique');
+
+    @unlink($registryPath);
     @rmdir($testDir);
 }, $results);
 

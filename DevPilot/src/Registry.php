@@ -16,8 +16,14 @@ final class Registry
 
     public function __construct(string $filePath)
     {
-        $this->filePath = dirname($filePath) . '/projects.json';
-        $this->lockFilePath = dirname($this->filePath) . '/.projects.lock';
+        // If filePath ends with .json, use it directly; otherwise use projects.json in that directory
+        if (str_ends_with($filePath, '.json')) {
+            $this->filePath = $filePath;
+            $this->lockFilePath = dirname($filePath) . '/.projects.lock';
+        } else {
+            $this->filePath = dirname($filePath) . '/projects.json';
+            $this->lockFilePath = dirname($filePath) . '/.projects.lock';
+        }
         $this->migrateIfNecessary();
         $this->load();
     }
@@ -80,6 +86,14 @@ final class Registry
 
     private function withLock(callable $operation): mixed
     {
+        // Ensure registry directory exists before acquiring lock
+        $dir = dirname($this->filePath);
+        if (!is_dir($dir)) {
+            if (!mkdir($dir, 0700, true)) {
+                throw new RuntimeException('Failed to create registry directory');
+            }
+        }
+
         $handle = $this->acquireLock();
 
         try {
@@ -91,8 +105,10 @@ final class Registry
             $this->writeToDisk();
 
             return $result;
-        } finally {
+        } catch (Throwable $e) {
+            // Release lock before re-throwing
             $this->releaseLock($handle);
+            throw $e;
         }
     }
 
@@ -159,7 +175,14 @@ final class Registry
             throw new RuntimeException('Failed to write complete registry content');
         }
 
-        fflush($tempHandle);
+        $flushed = fflush($tempHandle);
+        if ($flushed === false) {
+            flock($tempHandle, LOCK_UN);
+            fclose($tempHandle);
+            unlink($tempFile);
+            throw new RuntimeException('Failed to flush registry content to disk');
+        }
+
         flock($tempHandle, LOCK_UN);
         fclose($tempHandle);
 
