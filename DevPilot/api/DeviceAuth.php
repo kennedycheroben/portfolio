@@ -24,16 +24,39 @@ final class DeviceAuth
         }
 
         $data = json_decode($content, true);
-        return is_array($data) ? $data : [];
+        if (!is_array($data)) {
+            return [];
+        }
+
+        $devices = [];
+        foreach ($data as $item) {
+            if (is_array($item) && isset($item['id'])) {
+                $devices[$item['id']] = $item;
+            }
+        }
+
+        return $devices;
     }
 
-    public static function registerDevice(string $name, string $publicKey): string
+    public static function registerDevice(string $name, string $publicKey, string $secret = null): string
     {
         $devices = self::listRegisteredDevices();
         $deviceId = self::generateDeviceId($name);
+        $secret = $secret ?? bin2hex(random_bytes(32));
+
+        if (isset($devices[$deviceId])) {
+            foreach ($devices as $existingId => $existingDevice) {
+                if ($existingDevice['name'] === $name) {
+                    unset($devices[$existingId]);
+                }
+            }
+        }
+
         $devices[$deviceId] = [
+            'id' => $deviceId,
             'name' => $name,
             'publicKey' => $publicKey,
+            'secret' => $secret,
             'registeredAt' => date('c'),
             'lastSeen' => null,
             'revoked' => false,
@@ -53,20 +76,16 @@ final class DeviceAuth
             return false;
         }
 
-        if (isset($devices[$deviceId])) {
-            $devices[$deviceId]['revoked'] = true;
-            $devices[$deviceId]['revokedAt'] = date('c');
-            self::saveDevices($devices);
-            return true;
-        }
-
-        return false;
+        $devices[$deviceId]['revoked'] = true;
+        $devices[$deviceId]['revokedAt'] = date('c');
+        self::saveDevices($devices);
+        return true;
     }
 
     public static function updateLastSeen(string $deviceId): void
     {
         $devices = self::listRegisteredDevices();
-        if (isset($devices[$deviceId])) {
+        if (isset($devices[$deviceId]) && !$devices[$deviceId]['revoked']) {
             $devices[$deviceId]['lastSeen'] = date('c');
             $devices[$deviceId]['online'] = true;
             self::saveDevices($devices);
@@ -85,6 +104,11 @@ final class DeviceAuth
             return null;
         }
 
+        $nonce = $payload['nonce'] ?? '';
+        if ($nonce === '' && !hash_equals($payload['nonce'] ?? '', $nonce)) {
+            return null;
+        }
+
         $devices = self::listRegisteredDevices();
         if (!isset($devices[$deviceId])) {
             return null;
@@ -95,9 +119,16 @@ final class DeviceAuth
             return null;
         }
 
-        if (self::verifySignature($token, $device['publicKey'] ?? '')) {
+        $deviceSecret = $device['secret'] ?? '';
+        if (empty($deviceSecret)) {
+            return null;
+        }
+
+        if (self::verifySignature($token, $deviceSecret)) {
             self::updateLastSeen($deviceId);
-            return $device;
+            $result = $device;
+            unset($result['secret']);
+            return $result;
         }
 
         return null;
@@ -105,6 +136,16 @@ final class DeviceAuth
 
     public static function generateToken(string $deviceId): string
     {
+        $devices = self::listRegisteredDevices();
+        if (!isset($devices[$deviceId])) {
+            throw new \RuntimeException('Device not registered');
+        }
+
+        $secret = $devices[$deviceId]['secret'] ?? '';
+        if ($secret === '') {
+            throw new \RuntimeException('Device has no secret');
+        }
+
         $header = base64_encode(json_encode(['alg' => 'HS256', 'typ' => 'JWT']));
         $payload = base64_encode(json_encode([
             'deviceId' => $deviceId,
@@ -113,7 +154,7 @@ final class DeviceAuth
             'nonce' => bin2hex(random_bytes(16)),
         ]));
 
-        $signature = hash_hmac('sha256', $header . '.' . $payload, $deviceId, true);
+        $signature = hash_hmac('sha256', $header . '.' . $payload, $secret, true);
         $sigBase64 = rtrim(strtr(base64_encode($signature), '+/', '-_'), '=');
 
         return $header . '.' . $payload . '.' . $sigBase64;
@@ -122,7 +163,12 @@ final class DeviceAuth
     public static function getDevice(string $deviceId): ?array
     {
         $devices = self::listRegisteredDevices();
-        return $devices[$deviceId] ?? null;
+        if (!isset($devices[$deviceId])) {
+            return null;
+        }
+        $device = $devices[$deviceId];
+        unset($device['secret']);
+        return $device;
     }
 
     public static function isRevoked(string $deviceId): bool
@@ -133,7 +179,7 @@ final class DeviceAuth
 
     private static function generateDeviceId(string $name): string
     {
-        return 'dev_' . substr(hash('sha256', $name . microtime(true)), 0, 16);
+        return 'dev_' . substr(hash('sha256', $name . ':' . bin2hex(random_bytes(16)) . ':' . microtime(true)), 0, 32);
     }
 
     private static function decodeToken(string $token): ?array
@@ -157,12 +203,18 @@ final class DeviceAuth
             return null;
         }
 
+        $iat = $data['iat'] ?? 0;
+        $now = time();
+        if (abs($now - $iat) > 3600) {
+            return null;
+        }
+
         return $data;
     }
 
-    private static function verifySignature(string $token, string $deviceId): bool
+    private static function verifySignature(string $token, string $secret): bool
     {
-        if ($deviceId === '') {
+        if ($secret === '') {
             return false;
         }
 
@@ -176,7 +228,7 @@ final class DeviceAuth
         $signature = $parts[2];
 
         $dataToSign = $header . '.' . $payload;
-        $expectedSig = hash_hmac('sha256', $dataToSign, $deviceId, true);
+        $expectedSig = hash_hmac('sha256', $dataToSign, $secret, true);
 
         $sigDecoded = base64_decode(strtr($signature, '-_', '+/'), true);
         if ($sigDecoded === false) {
@@ -203,25 +255,47 @@ final class DeviceAuth
             }
         }
 
+        $fileHandle = fopen($filePath, 'c+');
+        if ($fileHandle === false) {
+            throw new \RuntimeException('Failed to open devices file');
+        }
+
+        if (!flock($fileHandle, LOCK_EX)) {
+            fclose($fileHandle);
+            throw new \RuntimeException('Failed to acquire lock on devices file');
+        }
+
         try {
             $json = json_encode(array_values($devices), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
-        } catch (\Throwable $e) {
-            throw new \RuntimeException('Failed to encode devices data');
-        }
+            if ($json === false) {
+                throw new \RuntimeException('Failed to encode devices data');
+            }
 
-        if ($json === false) {
-            throw new \RuntimeException('Failed to encode devices data');
-        }
+            ftruncate($fileHandle, 0);
+            rewind($fileHandle);
+            fwrite($fileHandle, $json);
+            fflush($fileHandle);
 
-        $tempFile = $filePath . '.tmp.' . uniqid('', true);
-        if (file_put_contents($tempFile, $json) === false) {
-            throw new \RuntimeException('Failed to write devices file');
+            chmod($filePath, 0600);
+        } finally {
+            flock($fileHandle, LOCK_UN);
+            fclose($fileHandle);
         }
+    }
 
-        chmod($tempFile, 0600);
-        if (!rename($tempFile, $filePath)) {
-            unlink($tempFile);
-            throw new \RuntimeException('Failed to atomically replace devices file');
-        }
+    public static function generateTokenFromSecret(string $deviceId, string $secret): string
+    {
+        $header = base64_encode(json_encode(['alg' => 'HS256', 'typ' => 'JWT']));
+        $payload = base64_encode(json_encode([
+            'deviceId' => $deviceId,
+            'iat' => time(),
+            'exp' => time() + self::TOKEN_EXPIRY_SECONDS,
+            'nonce' => bin2hex(random_bytes(16)),
+        ]));
+
+        $signature = hash_hmac('sha256', $header . '.' . $payload, $secret, true);
+        $sigBase64 = rtrim(strtr(base64_encode($signature), '+/', '-_'), '=');
+
+        return $header . '.' . $payload . '.' . $sigBase64;
     }
 }

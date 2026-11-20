@@ -7,7 +7,6 @@ require_once __DIR__ . '/../../includes/bootstrap.php';
 require_once __DIR__ . '/../../includes/auth.php';
 
 use DevPilot\Api\DeviceAuth;
-use DevPilot\Api\Endpoints;
 use DevPilot\Api\OperationQueue;
 use DevPilot\Config;
 use DevPilot\Discovery;
@@ -27,71 +26,71 @@ header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
 
 $method = $_SERVER['REQUEST_METHOD'];
-$path = parse_url($_SERVER['REQUEST_URI'], PARSE_URL_PATH);
-$path = trim(str_replace('/admin/api/devpilot', '', $path), '/');
+$uri = $_SERVER['REQUEST_URI'] ?? '/admin/api/devpilot';
+$parsed = parse_url($uri);
+$path = trim(str_replace('/admin/api/devpilot', '', $parsed['path'] ?? ''), '/');
 
-$routes = [
-    'GET' => [
-        'projects' => 'listProjects',
-        'health' => 'getHealth',
-        'devices' => 'getDevices',
-        'operations' => 'getOperations',
-    ],
-    'POST' => [
-        'devices' => 'registerDevice',
-        'operations' => 'queueOperation',
-    ],
-    'DELETE' => [
-        'devices' => 'deleteDevice',
-    ],
-];
-
-$segments = explode('/', trim($path, '/'));
+$segments = explode('/', $path);
 $routeKey = $segments[0] ?? '';
 
-$handler = null;
-
-if (isset($routes[$method][$routeKey])) {
-    $handler = [$this, $routes[$method][$routeKey]];
-} elseif ($method === 'GET' && preg_match('~^project/(\d+)$~', $path, $matches)) {
-    $handler = function() use ($matches) {
-        return getProject((int) $matches[1]);
-    };
-} elseif ($method === 'GET' && preg_match('~^discovery/(\d+)$~', $path, $matches)) {
-    $handler = function() use ($matches) {
-        return getDiscovery((int) $matches[1]);
-    };
-} elseif ($method === 'GET' && preg_match('~^operation/(\d+)$~', $path, $matches)) {
-    $handler = function() use ($matches) {
-        return getOperation((int) $matches[1]);
-    };
-} elseif ($method === 'POST' && preg_match('~^operations/(\d+)/execute$~', $path, $matches)) {
-    $handler = function() use ($matches) {
-        return executeOperation((int) $matches[1]);
-    };
-} elseif ($method === 'DELETE' && preg_match('~^devices/(.+)$~', $path, $matches)) {
-    $handler = function() use ($matches) {
-        return deleteDevice($matches[1]);
-    };
-}
-
-if ($handler === null) {
-    http_response_code(404);
-    echo json_encode(['error' => 'Not found']);
-    exit;
-}
-
 try {
-    $result = $handler();
+    $result = handleRequest($method, $segments);
     echo json_encode($result);
 } catch (\Throwable $e) {
-    Logger::error('API error', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
+    Logger::error('API error', ['error' => $e->getMessage()]);
     http_response_code(500);
     echo json_encode(['error' => 'Internal server error']);
 }
 
-// Handler functions
-function listProjects(): array
+function handleRequest(string $method, array $segments): array
+{
+    return match ($method) {
+        'GET' => handleGet($segments),
+        'POST' => handlePost($segments),
+        'DELETE' => handleDelete($segments),
+        default => ['success' => false, 'error' => 'Method not allowed', 'status' => 405]
+    };
+}
+
+function handleGet(array $segments): array
+{
+    $routeKey = $segments[0] ?? '';
+
+    return match ($routeKey) {
+        'projects' => getProjects(),
+        'project' => getProject((int) ($segments[1] ?? 0)),
+        'discovery' => getDiscovery((int) ($segments[1] ?? 0)),
+        'health' => getHealth(),
+        'devices' => getDevices(),
+        'operations' => getOperations(),
+        'operation' => getOperation((int) ($segments[1] ?? 0)),
+        default => ['success' => false, 'error' => 'Not found', 'status' => 404]
+    };
+}
+
+function handlePost(array $segments): array
+{
+    $routeKey = $segments[0] ?? '';
+
+    return match ($routeKey) {
+        'devices' => registerDevice(),
+        'operations' => queueOperation(),
+        default => ['success' => false, 'error' => 'Not found', 'status' => 404]
+    };
+}
+
+function handleDelete(array $segments): array
+{
+    $routeKey = $segments[0] ?? '';
+
+    if ($routeKey === 'devices' && isset($segments[1])) {
+        return deleteDevice($segments[1]);
+    }
+
+    return ['success' => false, 'error' => 'Not found', 'status' => 404];
+}
+
+function getProjects(): array
 {
     $registry = Registry::getInstance();
     $projects = $registry->list();
@@ -126,11 +125,15 @@ function listProjects(): array
 
 function getProject(int $id): array
 {
+    if ($id <= 0) {
+        return ['success' => false, 'error' => 'Invalid project ID', 'status' => 400];
+    }
+
     $registry = Registry::getInstance();
     $project = $registry->get($id);
 
     if ($project === null) {
-        return ['error' => 'Project not found', 'success' => false];
+        return ['success' => false, 'error' => 'Project not found', 'status' => 404];
     }
 
     $discovery = Discovery::detect($project->path);
@@ -157,11 +160,15 @@ function getProject(int $id): array
 
 function getDiscovery(int $id): array
 {
+    if ($id <= 0) {
+        return ['success' => false, 'error' => 'Invalid project ID', 'status' => 400];
+    }
+
     $registry = Registry::getInstance();
     $project = $registry->get($id);
 
     if ($project === null) {
-        return ['error' => 'Project not found', 'success' => false];
+        return ['success' => false, 'error' => 'Project not found', 'status' => 404];
     }
 
     $discovery = Discovery::detect($project->path);
@@ -235,11 +242,15 @@ function getOperations(): array
 
 function getOperation(int $id): array
 {
+    if ($id <= 0) {
+        return ['success' => false, 'error' => 'Invalid operation ID', 'status' => 400];
+    }
+
     $operations = new OperationQueue();
     $op = $operations->get($id);
 
     if ($op === null) {
-        return ['error' => 'Operation not found', 'success' => false];
+        return ['success' => false, 'error' => 'Operation not found', 'status' => 404];
     }
 
     return ['success' => true, 'operation' => $op];
@@ -253,16 +264,17 @@ function registerDevice(): array
     $publicKey = $input['publicKey'] ?? '';
 
     if ($name === '' || $publicKey === '') {
-        return ['error' => 'Name and publicKey required', 'success' => false];
+        return ['success' => false, 'error' => 'Name and publicKey required', 'status' => 400];
     }
 
     $deviceId = DeviceAuth::registerDevice($name, $publicKey);
+    $token = DeviceAuth::generateToken($deviceId);
 
     return [
         'success' => true,
         'deviceId' => $deviceId,
-        'message' => "Device '{$name}' registered",
-        'token' => DeviceAuth::generateToken($deviceId),
+        'token' => $token,
+        'message' => "Device '{$name}' registered"
     ];
 }
 
@@ -272,19 +284,19 @@ function queueOperation(): array
 
     $projectId = (int) ($input['projectId'] ?? 0);
     if ($projectId <= 0) {
-        return ['error' => 'Invalid project ID', 'success' => false];
+        return ['success' => false, 'error' => 'Invalid project ID', 'status' => 400];
     }
 
     $registry = Registry::getInstance();
     $project = $registry->get($projectId);
     if ($project === null) {
-        return ['error' => 'Project not found', 'success' => false];
+        return ['success' => false, 'error' => 'Project not found', 'status' => 404];
     }
 
     $operation = $input['operation'] ?? '';
     $allowedOperations = ['check_health', 'run_discovery', 'get_status'];
     if (!in_array($operation, $allowedOperations, true)) {
-        return ['error' => 'Operation not allowed', 'success' => false];
+        return ['success' => false, 'error' => 'Operation not allowed', 'status' => 403];
     }
 
     $operations = new OperationQueue();
@@ -305,71 +317,12 @@ function queueOperation(): array
 function deleteDevice(string $deviceId): array
 {
     if ($deviceId === '' || $deviceId === 'self') {
-        return ['error' => 'Invalid device ID', 'success' => false];
+        return ['success' => false, 'error' => 'Invalid device ID', 'status' => 400];
     }
 
     if (!DeviceAuth::revokeDevice($deviceId)) {
-        return ['error' => 'Device not found or already revoked', 'success' => false];
+        return ['success' => false, 'error' => 'Device not found or already revoked', 'status' => 404];
     }
 
     return ['success' => true, 'message' => "Device '{$deviceId}' revoked"];
-}
-
-function executeOperation(int $operationId): array
-{
-    $operations = new OperationQueue();
-    $op = $operations->get($operationId);
-
-    if ($op === null) {
-        return ['error' => 'Operation not found', 'success' => false];
-    }
-
-    if ($op['status'] !== 'pending') {
-        return ['error' => 'Operation not pending', 'success' => false];
-    }
-
-    $registry = Registry::getInstance();
-    $project = $registry->get($op['projectId']);
-    if ($project === null) {
-        return ['error' => 'Project not found', 'success' => false];
-    }
-
-    $result = ['success' => false];
-
-    switch ($op['operation']) {
-        case 'check_health':
-            $result = [
-                'projectId' => $project->id,
-                'name' => $project->name,
-                'healthy' => true,
-                'issues' => [],
-                'warnings' => [],
-                'language' => $op['parameters']['language'] ?? $project->language,
-            ];
-            break;
-        case 'run_discovery':
-            $discovery = Discovery::detect($project->path);
-            $result = [
-                'projectId' => $project->id,
-                'name' => $project->name,
-                'discovery' => $discovery,
-            ];
-            break;
-        case 'get_status':
-            $result = [
-                'projectId' => $project->id,
-                'name' => $project->name,
-                'path' => $project->path,
-                'language' => $project->language,
-                'framework' => $project->framework,
-                'status' => $project->status,
-            ];
-            break;
-        default:
-            $result = ['error' => 'Unknown operation', 'success' => false];
-    }
-
-    $operations->complete($operationId, $result);
-
-    return ['success' => true, 'result' => $result];
 }
