@@ -242,6 +242,146 @@ $results = test('missing runtime dependencies return a controlled initialization
     assertEquals('missing runtime dependency status', 'required_files_missing', devpilot_initialize_runtime($missingRoot));
 }, $testResults);
 
+$results = test('operation queue serializes sequential mutations, preserves records, and releases failed writes', function() use (&$tempDir) {
+    $queueDir = $tempDir . '/operation-queue-sequential';
+    $logsDir = $tempDir . '/operation-queue-logs';
+    mkdir($queueDir, 0700, true);
+    \DevPilot\Logger::init($logsDir);
+    $queuePath = $queueDir . '/operations.json';
+    file_put_contents($queuePath, json_encode(['operations' => [[
+        'id' => 7,
+        'projectId' => 7,
+        'operation' => 'legacy_queued_operation',
+        'parameters' => [],
+        'status' => 'pending',
+        'deviceId' => null,
+        'adminId' => 1,
+        'approvedAt' => date('c'),
+        'claimAt' => null,
+        'startedAt' => null,
+        'completedAt' => null,
+        'result' => null,
+        'error' => null,
+    ]]]));
+    $queue = new \DevPilot\Api\OperationQueue($queuePath);
+
+    $firstId = $queue->queue(1, 'get_status', ['safe' => 'value']);
+    $secondId = $queue->queue(2, 'run_discovery', ['api_token' => 'should-redact']);
+    assertEquals('first queue id follows existing operation', 8, $firstId);
+    assertEquals('second queue id follows first addition', 9, $secondId);
+    assertEquals('existing and sequential operations preserved', 3, count($queue->list()));
+    assertEquals('existing queued operation retained', 'legacy_queued_operation', $queue->get(7)['operation']);
+    assertEquals('sensitive parameters remain redacted', '***REDACTED***', $queue->get($secondId)['parameters']['api_token']);
+
+    $invalidResource = fopen('php://memory', 'r');
+    try {
+        $queue->queue(3, 'invalid_json_fixture', ['resource' => $invalidResource]);
+        throw new RuntimeException('Expected queue write to reject unencodable parameters');
+    } catch (RuntimeException $error) {
+        assertTrue('failed write was rejected', str_contains($error->getMessage(), 'encode operations'));
+    } finally {
+        fclose($invalidResource);
+    }
+
+    $thirdId = $queue->queue(3, 'check_health');
+    assertEquals('lock released after failed write', 10, $thirdId);
+    $data = json_decode((string) file_get_contents($queuePath), true);
+    assertTrue('queue file remains valid JSON', is_array($data));
+    assertEquals('next id persisted', 11, $data['next_id']);
+    assertEquals('atomic write kept all successful records', 4, count($data['operations']));
+    assertEquals('no temporary queue files remain', [], glob($queueDir . '/.operations-*') ?: []);
+
+    foreach ([7, $firstId, $secondId, $thirdId] as $id) {
+        $queue->complete($id, ['ok' => true]);
+    }
+    $data = json_decode((string) file_get_contents($queuePath), true);
+    foreach ($data['operations'] as &$operation) {
+        $operation['approvedAt'] = '2000-01-01T00:00:00+00:00';
+        $operation['completedAt'] = '2000-01-01T00:00:00+00:00';
+    }
+    unset($operation);
+    file_put_contents($queuePath, json_encode($data, JSON_PRETTY_PRINT));
+    assertEquals('expired records removed', 4, $queue->cleanExpired());
+    $afterCleanupId = (new \DevPilot\Api\OperationQueue($queuePath))->queue(4, 'get_status');
+    assertEquals('ids are not reused after cleanup and restart', 11, $afterCleanupId);
+}, $testResults);
+
+$results = test('operation queue assigns unique ids under concurrent workers', function() use (&$tempDir) {
+    $queueDir = $tempDir . '/operation-queue-concurrent';
+    $logsDir = $tempDir . '/operation-queue-worker-logs';
+    mkdir($queueDir, 0700, true);
+    mkdir($logsDir, 0700, true);
+    $queuePath = $queueDir . '/operations.json';
+    $autoloadPath = realpath(__DIR__ . '/../autoload.php');
+    $workerCount = 5;
+    $operationsPerWorker = 12;
+    $workers = [];
+
+    for ($workerIndex = 0; $workerIndex < $workerCount; $workerIndex++) {
+        $script = 'require ' . var_export($autoloadPath, true) . ';'
+            . '\\DevPilot\\Logger::init(' . var_export($logsDir, true) . ');'
+            . '$queue = new \\DevPilot\\Api\\OperationQueue(' . var_export($queuePath, true) . ');'
+            . 'for ($i = 0; $i < ' . $operationsPerWorker . '; $i++) {'
+            . '$queue->queue(' . $workerIndex . ', "concurrent_operation", ["worker" => ' . $workerIndex . ']);'
+            . '}';
+        $stdoutPath = $queueDir . '/worker-' . $workerIndex . '.out';
+        $stderrPath = $queueDir . '/worker-' . $workerIndex . '.err';
+        $process = proc_open(
+            escapeshellarg(PHP_BINARY) . ' -r ' . escapeshellarg($script),
+            [0 => ['file', '/dev/null', 'r'], 1 => ['file', $stdoutPath, 'a'], 2 => ['file', $stderrPath, 'a']],
+            $pipes
+        );
+        assertTrue('worker process started', is_resource($process));
+        $workers[] = ['process' => $process, 'exitCode' => null, 'stderr' => $stderrPath];
+    }
+
+    $deadline = microtime(true) + 20;
+    do {
+        $running = 0;
+        foreach ($workers as &$worker) {
+            if (!is_resource($worker['process'])) {
+                continue;
+            }
+            $status = proc_get_status($worker['process']);
+            if ($status['running']) {
+                $running++;
+                continue;
+            }
+            $worker['exitCode'] = $status['exitcode'];
+            proc_close($worker['process']);
+            $worker['process'] = null;
+        }
+        unset($worker);
+        if ($running > 0 && microtime(true) >= $deadline) {
+            foreach ($workers as &$worker) {
+                if (is_resource($worker['process'])) {
+                    proc_terminate($worker['process'], 9);
+                    proc_close($worker['process']);
+                    $worker['process'] = null;
+                    $worker['exitCode'] = 124;
+                }
+            }
+            unset($worker);
+            throw new RuntimeException('Concurrent queue workers timed out, possible lock deadlock');
+        }
+        if ($running > 0) {
+            usleep(10000);
+        }
+    } while ($running > 0);
+
+    foreach ($workers as $worker) {
+        assertEquals('concurrent worker exit status: ' . basename($worker['stderr']), 0, $worker['exitCode']);
+        assertEquals('worker stderr is empty', '', trim((string) file_get_contents($worker['stderr'])));
+    }
+
+    $allOperations = (new \DevPilot\Api\OperationQueue($queuePath))->list();
+    $expectedCount = $workerCount * $operationsPerWorker;
+    $ids = array_column($allOperations, 'id');
+    assertEquals('all concurrent queue writes preserved', $expectedCount, count($allOperations));
+    assertEquals('all concurrent ids are unique', $expectedCount, count(array_unique($ids)));
+    assertEquals('next id advances beyond all concurrent writes', $expectedCount + 1, json_decode((string) file_get_contents($queuePath), true)['next_id']);
+}, $testResults);
+
 $results = test('all DevPilot admin entry points authenticate before runtime initialization', function() {
     $pages = [
         dirname(__DIR__, 2) . '/admin/devpilot.php',
