@@ -15,19 +15,17 @@ if (PHP_SAPI !== 'cli') {
 
 require_once dirname(__DIR__) . '/vendor/autoload.php';
 
-use DevPilot\Api\DeviceAuth;
-use DevPilot\Api\OperationQueue;
 use DevPilot\Config;
 use DevPilot\Discovery;
 use DevPilot\Logger;
 use DevPilot\Project;
-use DevPilot\Registry;
 
 const VERSION = '1.0.0';
 const API_BASE_URL = 'https://kennedycheroben.co.ke/admin/api/devpilot';
 
 $options = [
     'deviceId' => null,
+    'secret' => null,
     'token' => null,
     'pollInterval' => 30,
     'projectPath' => null,
@@ -42,74 +40,45 @@ Usage: devpilot-agent [options]
 
 Options:
   --device-id <id>     Registered device ID
-  --token <token>      Authentication token
+  --secret <secret>    Device secret (from registration)
+  --token <token>      Authentication token (alternative to secret)
   --poll <seconds>     Poll interval (default: 30)
   --project <path>     Path to project for local operations
   --verbose            Enable verbose output
   --help               Show this help
 
 Examples:
-  devpilot-agent --device-id dev_xyz --token <token>
-  devpilot-agent --register --name "ThinkPad Agent"
-  devpilot-agent --daemon --project /home/user/projects
+  # Register a new device (returns deviceId and secret)
+  devpilot-agent --register "ThinkPad" --public-key <base64_key>
+
+  # Run as daemon
+  devpilot-agent --daemon --device-id dev_xyz --secret <secret> --project /path/to/project
+
+  # Check status
+  devpilot-agent --status --device-id dev_xyz --secret <secret>
 
 Commands:
-  --register <name>    Register this device (outputs public key)
+  --register <name>    Register this device (requires --public-key)
   --daemon             Run as daemon, polling for operations
   --status             Show current agent status
+  --poll-once          Poll once and execute any pending operations
 
 HELP;
 }
 
-function registerDevice(string $name): string
+function getConfigFile(): string
 {
-    $configFile = getDeviceConfigPath();
-    if (is_readable($configFile)) {
-        $config = json_decode(file_get_contents($configFile), true);
-        if ($config !== null) {
-            echo "Device already registered: {$config['deviceId']}\n";
-            return $config['deviceId'];
-        }
+    $home = getenv('HOME') ?: sys_get_temp_dir();
+    $configDir = $home . '/.devpilot';
+    if (!is_dir($configDir)) {
+        @mkdir($configDir, 0700, true);
     }
-
-    $privateKey = sodium_crypto_sign_SECRETKEYBYTES > 0
-        ? sodium_crypto_sign_keypair()
-        : random_bytes(32);
-
-    $publicKey = sodium_crypto_sign_PUBLICKEYBYTES > 0
-        ? sodium_crypto_sign_publickey($privateKey)
-        : hash('sha256', $privateKey, true);
-
-    $deviceId = 'dev_' . bin2hex(random_bytes(16));
-
-    $response = pollApi('POST', 'devices', json_encode([
-        'name' => $name,
-        'publicKey' => base64_encode($publicKey),
-    ]), true);
-
-    if (isset($response['success']) && $response['success']) {
-        $config = [
-            'deviceId' => $deviceId,
-            'privateKey' => base64_encode($privateKey),
-            'token' => $response['token'] ?? '',
-            'registeredAt' => date('c'),
-        ];
-
-        file_put_contents($configFile, json_encode($config, JSON_PRETTY_PRINT));
-        chmod($configFile, 0600);
-
-        echo "Device registered successfully\n";
-        echo "Device ID: {$deviceId}\n";
-        return $deviceId;
-    }
-
-    fwrite(STDERR, "Registration failed: " . ($response['error'] ?? 'Unknown error') . "\n");
-    exit(1);
+    return $configDir . '/agent.json';
 }
 
-function loadDeviceConfig(): ?array
+function loadConfig(): ?array
 {
-    $configFile = getDeviceConfigPath();
+    $configFile = getConfigFile();
     if (!is_readable($configFile)) {
         return null;
     }
@@ -118,29 +87,43 @@ function loadDeviceConfig(): ?array
     return is_array($config) ? $config : null;
 }
 
-function getDeviceConfigPath(): string
+function saveConfig(array $config): void
 {
-    $home = getenv('HOME') ?: sys_get_temp_dir();
-    $configDir = $home . '/.devpilot';
-    if (!is_dir($configDir)) {
-        @mkdir($configDir, 0700, true);
-    }
-    return $configDir . '/device.json';
+    $configFile = getConfigFile();
+    file_put_contents($configFile, json_encode($config, JSON_PRETTY_PRINT));
+    chmod($configFile, 0600);
 }
 
-function pollApi(string $method, string $endpoint, string $body = '', bool $auth = false): array
+function generateDeviceId(string $name): string
+{
+    return 'dev_' . substr(hash('sha256', $name . ':' . bin2hex(random_bytes(16)) . ':' . microtime(true)), 0, 32);
+}
+
+function generateToken(string $deviceId, string $secret): string
+{
+    $nonce = bin2hex(random_bytes(16));
+
+    $header = base64_encode(json_encode(['alg' => 'HS256', 'typ' => 'JWT']));
+    $payload = base64_encode(json_encode([
+        'deviceId' => $deviceId,
+        'iat' => time(),
+        'exp' => time() + 300,
+        'tokenNonce' => $nonce,
+    ]));
+
+    $signature = hash_hmac('sha256', $header . '.' . $payload, $secret, true);
+    $sigBase64 = rtrim(strtr(base64_encode($signature), '+/', '-_'), '=');
+
+    return $header . '.' . $payload . '.' . $sigBase64;
+}
+
+function pollApi(string $method, string $endpoint, string $body = '', string $token = '', int $timeout = 30): array
 {
     $url = API_BASE_URL . '/' . $endpoint;
     $ch = curl_init($url);
 
     $headers = ['Content-Type: application/json; charset=utf-8'];
-
-    if ($auth) {
-        $config = loadDeviceConfig();
-        if ($config === null) {
-            return ['error' => 'Not registered'];
-        }
-        $token = DeviceAuth::generateTokenFromSecret($config['deviceId'], base64_decode($config['token'] ?? ''));
+    if ($token !== '') {
         $headers[] = 'Authorization: Bearer ' . $token;
     }
 
@@ -149,7 +132,7 @@ function pollApi(string $method, string $endpoint, string $body = '', bool $auth
         CURLOPT_CUSTOMREQUEST => $method,
         CURLOPT_POSTFIELDS => $body,
         CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT => 30,
+        CURLOPT_TIMEOUT => $timeout,
         CURLOPT_SSL_VERIFYPEER => true,
         CURLOPT_USERAGENT => 'DevPilot-Agent/' . VERSION,
     ]);
@@ -160,92 +143,20 @@ function pollApi(string $method, string $endpoint, string $body = '', bool $auth
     curl_close($ch);
 
     if ($error) {
-        return ['error' => $error];
+        return ['error' => $error, 'status' => 0];
     }
 
     $data = json_decode($response, true);
-    return is_array($data) ? $data : ['raw' => $response];
+    if (is_array($data)) {
+        $data['status'] = $httpCode;
+        return $data;
+    }
+
+    return ['raw' => $response, 'status' => $httpCode];
 }
 
-function runDaemon(int $pollInterval, ?string $projectId): void
+function executeOperation(array $project, string $operation): array
 {
-    $config = loadDeviceConfig();
-    if ($config === null) {
-        fwrite(STDERR, "Device not registered. Use --register first.\n");
-        exit(1);
-    }
-
-    echo "Starting DevPilot Agent...\n";
-    echo "Device: {$config['deviceId']}\n";
-    echo "Poll interval: {$pollInterval}s\n\n";
-
-    while (true) {
-        $response = pollApi('GET', 'operations?status=pending&deviceId=' . $config['deviceId'], '', true);
-
-        if (isset($response['success']) && $response['success']) {
-            $operations = $response['operations'] ?? [];
-
-            foreach ($operations as $op) {
-                echo "Found operation #{$op['id']}: {$op['operation']}\n";
-                executeOperation($config, $op);
-            }
-        }
-
-        sleep($pollInterval);
-    }
-}
-
-function executeOperation(array $config, array $operation): void
-{
-    $projectId = $operation['projectId'] ?? 0;
-    $opName = $operation['operation'] ?? '';
-
-    echo "  Operation: {$opName}\n";
-
-    if ($projectId <= 0) {
-        echo "  Error: Invalid project ID\n";
-        return;
-    }
-
-    $project = findLocalProject($projectId, $config);
-    if ($project === null) {
-        echo "  Error: Project not found locally\n";
-        return;
-    }
-
-    $result = executeLocalOperation($project, $opName);
-    reportResult($config['deviceId'], $operation['id'], $result);
-}
-
-function findLocalProject(int $projectId, array $config): ?Project
-{
-    $envProjectPath = getenv('DEVPILOT_PROJECT_PATH');
-    if ($envProjectPath !== false && is_dir($envProjectPath)) {
-        return new Project(
-            id: $projectId,
-            name: basename($envProjectPath),
-            path: $envProjectPath,
-            language: Discovery::detect($envProjectPath)['primaryLanguage'] ?? 'unknown'
-        );
-    }
-
-    $localProjectPath = $config['projectPath'] ?? null;
-    if ($localProjectPath !== null && is_dir($localProjectPath)) {
-        return new Project(
-            id: $projectId,
-            name: basename($localProjectPath),
-            path: $localProjectPath,
-            language: Discovery::detect($localProjectPath)['primaryLanguage'] ?? 'unknown'
-        );
-    }
-
-    return null;
-}
-
-function executeLocalOperation(Project $project, string $operation): array
-{
-    $startTime = microtime(true);
-
     try {
         switch ($operation) {
             case 'check_health':
@@ -278,64 +189,222 @@ function executeLocalOperation(Project $project, string $operation): array
                 ];
 
             default:
-                return [
-                    'error' => "Unknown operation: {$operation}",
-                    'success' => false,
-                ];
+                return ['error' => "Unknown operation: {$operation}", 'success' => false];
         }
     } catch (\Throwable $e) {
-        return [
-            'error' => $e->getMessage(),
-            'success' => false,
-        ];
+        return ['error' => $e->getMessage(), 'success' => false];
     }
 }
 
-function reportResult(string $deviceId, int $operationId, array $result): void
+function runDaemon(int $pollInterval, string $deviceId, string $secret, ?string $projectPath): void
 {
-    $response = pollApi('POST', 'operations/' . $operationId . '/execute', json_encode([
+    $token = generateToken($deviceId, $secret);
+
+    echo "Starting DevPilot Agent...\n";
+    echo "Device: {$deviceId}\n";
+    echo "Poll interval: {$pollInterval}s\n";
+    if ($projectPath !== null) {
+        echo "Project path: {$projectPath}\n";
+    }
+    echo "\n";
+
+    while (true) {
+        $response = pollApi('GET', 'operations?status=pending&deviceId=' . $deviceId, '', $token, 30);
+
+        if (isset($response['success']) && $response['success'] && isset($response['operations'])) {
+            foreach ($response['operations'] as $op) {
+                echo "Operation #{$op['id']}: {$op['operation']}\n";
+                runOperation($deviceId, $secret, $op, $projectPath);
+            }
+        }
+
+        sleep($pollInterval);
+    }
+}
+
+function runOperation(string $deviceId, string $secret, array $op, ?string $projectPath): void
+{
+    $projectId = $op['projectId'] ?? 0;
+    $operation = $op['operation'] ?? '';
+
+    if ($projectId <= 0) {
+        echo "  Error: Invalid project ID\n";
+        return;
+    }
+
+    if ($projectPath === null || !is_dir($projectPath)) {
+        echo "  Error: No project path configured\n";
+        return;
+    }
+
+    $project = new Project(
+        id: $projectId,
+        name: basename($projectPath),
+        path: $projectPath,
+        language: Discovery::detect($projectPath)['primaryLanguage'] ?? 'unknown'
+    );
+
+    $result = executeOperation($project, $operation);
+
+    $response = pollApi('POST', 'operations/' . $op['id'] . '/execute', json_encode([
         'deviceId' => $deviceId,
         'result' => $result,
-    ]), true);
+    ]), $secret !== '' ? generateToken($deviceId, $secret) : '', 30);
+
+    echo "  Result: " . (isset($response['success']) && $response['success'] ? 'Success' : 'Failed') . "\n";
+}
+
+function checkStatus(string $deviceId, string $secret): void
+{
+    $config = loadConfig();
+    if ($config !== null) {
+        echo "Stored configuration found\n";
+        echo "Device ID: {$config['deviceId']}\n";
+    }
+
+    if ($deviceId === '' && $config !== null) {
+        $deviceId = $config['deviceId'] ?? '';
+        $secret = $config['secret'] ?? '';
+    }
+
+    if ($deviceId === '' || $secret === '') {
+        echo "No device credentials found. Use --device-id and --secret or run --register first.\n";
+        return;
+    }
+
+    $token = generateToken($deviceId, $secret);
+    $response = pollApi('GET', 'devices', '', $token, 30);
 
     if (isset($response['success']) && $response['success']) {
-        echo "  Result: Success\n";
+        $devices = $response['devices'] ?? [];
+        foreach ($devices as $id => $device) {
+            $status = ($device['revoked'] ?? false) ? 'REVOKED' : (($device['online'] ?? false) ? 'ONLINE' : 'OFFLINE');
+            echo "Device: {$id}\n";
+            echo "  Name: {$device['name']}\n";
+            echo "  Status: {$status}\n";
+            echo "  Last seen: {$device['lastSeen']}\n";
+        }
     } else {
-        echo "  Result: Failed - " . ($response['error'] ?? 'Unknown') . "\n";
+        echo "Failed to get status: " . ($response['error'] ?? 'Unknown error') . "\n";
     }
 }
 
-foreach ($GLOBALS['options'] ?? [] as $i => $arg) {
+function registerDevice(string $name, string $publicKey = ''): void
+{
+    $deviceId = generateDeviceId($name);
+    $secret = bin2hex(random_bytes(32));
+
+    if ($publicKey === '') {
+        $publicKey = base64_encode(random_bytes(32));
+    }
+
+    $response = pollApi('POST', 'devices', json_encode([
+        'name' => $name,
+        'publicKey' => $publicKey,
+    ]), '', 30);
+
+    if (isset($response['success']) && $response['success']) {
+        echo "Device registered successfully\n";
+        echo "Device ID: {$deviceId}\n";
+        echo "Secret: {$secret}\n";
+        echo "Token: " . generateToken($deviceId, $secret) . "\n";
+
+        saveConfig([
+            'deviceId' => $deviceId,
+            'secret' => $secret,
+            'name' => $name,
+            'registeredAt' => date('c'),
+        ]);
+
+        echo "\nConfiguration saved to " . getConfigFile() . "\n";
+        echo "Use --daemon --device-id {$deviceId} --secret <secret> to start polling.\n";
+    } else {
+        echo "Registration failed: " . ($response['error'] ?? 'Unknown error') . "\n";
+        exit(1);
+    }
+}
+
+foreach ($argv as $i => $arg) {
     if (strpos($arg, '--') === 0) {
         $key = ltrim($arg, '--');
-        $value = $argv[$i + 1] ?? null;
 
-        if (in_array($key, ['device-id', 'poll', 'project', 'verbose', 'register', 'daemon', 'status', 'help'])) {
-            if ($key === 'poll' || $key === 'project') {
-                $options[$key] = $value;
-            } elseif ($key === 'verbose') {
-                $options['verbose'] = true;
-            } elseif ($key === 'register') {
-                registerDevice($value);
-            } elseif ($key === 'daemon') {
-                runDaemon((int)($options['poll'] ?? 30), $options['project']);
-                exit;
-            } elseif ($key === 'status') {
-                $config = loadDeviceConfig();
-                if ($config === null) {
-                    echo "Device not registered.\n";
-                } else {
-                    echo "Device ID: {$config['deviceId']}\n";
-                    echo "Registered: {$config['registeredAt']}\n";
-                }
-                exit;
-            } elseif ($key === 'help') {
+        switch ($key) {
+            case 'help':
+            case 'h':
                 showHelp();
-                exit;
-            }
+                exit(0);
+
+            case 'daemon':
+                $deviceId = $options['deviceId'] ?? $argv[$i + 1] ?? '';
+                $secret = $options['secret'] ?? $argv[$i + 2] ?? '';
+                $projectPath = $options['project'] ?? $argv[$i + 3] ?? null;
+
+                if ($deviceId === '' || $secret === '') {
+                    // Load from config
+                    $config = loadConfig();
+                    if ($config === null) {
+                        fwrite(STDERR, "No device registered. Use --register first.\n");
+                        exit(1);
+                    }
+                    $deviceId = $config['deviceId'];
+                    $secret = $config['secret'];
+                }
+
+                $pollInterval = (int)($options['poll'] ?? $argv[$i + 1] ?? 30);
+                runDaemon($pollInterval, $deviceId, $secret, $projectPath);
+                exit(0);
+
+            case 'poll-once':
+                $deviceId = $options['deviceId'] ?? $argv[$i + 1] ?? '';
+                $secret = $options['secret'] ?? $argv[$i + 2] ?? '';
+
+                if ($deviceId !== '' && $secret !== '') {
+                    $token = generateToken($deviceId, $secret);
+                    $response = pollApi('GET', 'health', '', $token);
+                    echo json_encode($response, JSON_PRETTY_PRINT) . "\n";
+                }
+                exit(0);
+
+            case 'status':
+                $checkStatus($options['deviceId'] ?? '', $options['secret'] ?? '');
+                exit(0);
+
+            case 'register':
+                $name = $argv[$i + 1] ?? '';
+                $publicKey = $argv[$i + 2] ?? '';
+                registerDevice($name, $publicKey);
+                exit(0);
+
+            case 'device-id':
+                $options['deviceId'] = $argv[$i + 1];
+                break;
+            case 'secret':
+                $options['secret'] = $argv[$i + 1];
+                break;
+            case 'poll':
+                $options['pollInterval'] = (int)$argv[$i + 1];
+                break;
+            case 'project':
+                $options['projectPath'] = $argv[$i + 1];
+                break;
+            case 'verbose':
+                $options['verbose'] = true;
+                break;
         }
     }
 }
 
-echo json_encode(array_values(DeviceAuth::listRegisteredDevices()));
-exit;
+$config = loadConfig();
+if ($config !== null) {
+    echo json_encode([
+        'config' => [
+            'deviceId' => $config['deviceId'],
+            'name' => $config['name'],
+            'registeredAt' => $config['registeredAt'],
+        ],
+        'version' => VERSION,
+    ], JSON_PRETTY_PRINT) . "\n";
+} else {
+    echo "DevPilot Agent v" . VERSION . "\n\n";
+    showHelp();
+}

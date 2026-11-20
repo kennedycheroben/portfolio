@@ -267,12 +267,15 @@ function registerDevice(): array
         return ['success' => false, 'error' => 'Name and publicKey required', 'status' => 400];
     }
 
-    $deviceId = DeviceAuth::registerDevice($name, $publicKey);
-    $token = DeviceAuth::generateToken($deviceId);
+    $result = DeviceAuth::registerDevice($name, $publicKey);
+    $deviceId = $result['deviceId'];
+    $secret = $result['secret'];
+    $token = DeviceAuth::generateToken($deviceId, $secret);
 
     return [
         'success' => true,
         'deviceId' => $deviceId,
+        'secret' => $secret,
         'token' => $token,
         'message' => "Device '{$name}' registered"
     ];

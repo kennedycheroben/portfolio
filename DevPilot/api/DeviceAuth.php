@@ -38,17 +38,15 @@ final class DeviceAuth
         return $devices;
     }
 
-    public static function registerDevice(string $name, string $publicKey, string $secret = null): string
+    public static function registerDevice(string $name, string $publicKey = '', string $secret = null): array
     {
         $devices = self::listRegisteredDevices();
         $deviceId = self::generateDeviceId($name);
         $secret = $secret ?? bin2hex(random_bytes(32));
 
-        if (isset($devices[$deviceId])) {
-            foreach ($devices as $existingId => $existingDevice) {
-                if ($existingDevice['name'] === $name) {
-                    unset($devices[$existingId]);
-                }
+        foreach ($devices as $existingId => $existingDevice) {
+            if ($existingDevice['name'] === $name) {
+                unset($devices[$existingId]);
             }
         }
 
@@ -66,7 +64,10 @@ final class DeviceAuth
 
         Logger::info('Device registered', ['deviceId' => $deviceId, 'name' => $name]);
 
-        return $deviceId;
+        return [
+            'deviceId' => $deviceId,
+            'secret' => $secret,
+        ];
     }
 
     public static function revokeDevice(string $deviceId): bool
@@ -105,7 +106,8 @@ final class DeviceAuth
         }
 
         $nonce = $payload['nonce'] ?? '';
-        if ($nonce === '' && !hash_equals($payload['nonce'] ?? '', $nonce)) {
+        $tokenNonce = $payload['tokenNonce'] ?? null;
+        if ($tokenNonce === null || !hash_equals($tokenNonce, $nonce)) {
             return null;
         }
 
@@ -134,24 +136,21 @@ final class DeviceAuth
         return null;
     }
 
-    public static function generateToken(string $deviceId): string
+    public static function generateToken(string $deviceId, string $secret): string
     {
-        $devices = self::listRegisteredDevices();
-        if (!isset($devices[$deviceId])) {
-            throw new \RuntimeException('Device not registered');
-        }
-
-        $secret = $devices[$deviceId]['secret'] ?? '';
         if ($secret === '') {
             throw new \RuntimeException('Device has no secret');
         }
+
+        $nonce = bin2hex(random_bytes(16));
 
         $header = base64_encode(json_encode(['alg' => 'HS256', 'typ' => 'JWT']));
         $payload = base64_encode(json_encode([
             'deviceId' => $deviceId,
             'iat' => time(),
             'exp' => time() + self::TOKEN_EXPIRY_SECONDS,
-            'nonce' => bin2hex(random_bytes(16)),
+            'nonce' => $nonce,
+            'tokenNonce' => $nonce,
         ]));
 
         $signature = hash_hmac('sha256', $header . '.' . $payload, $secret, true);
@@ -281,21 +280,5 @@ final class DeviceAuth
             flock($fileHandle, LOCK_UN);
             fclose($fileHandle);
         }
-    }
-
-    public static function generateTokenFromSecret(string $deviceId, string $secret): string
-    {
-        $header = base64_encode(json_encode(['alg' => 'HS256', 'typ' => 'JWT']));
-        $payload = base64_encode(json_encode([
-            'deviceId' => $deviceId,
-            'iat' => time(),
-            'exp' => time() + self::TOKEN_EXPIRY_SECONDS,
-            'nonce' => bin2hex(random_bytes(16)),
-        ]));
-
-        $signature = hash_hmac('sha256', $header . '.' . $payload, $secret, true);
-        $sigBase64 = rtrim(strtr(base64_encode($signature), '+/', '-_'), '=');
-
-        return $header . '.' . $payload . '.' . $sigBase64;
     }
 }
