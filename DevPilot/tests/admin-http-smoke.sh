@@ -84,6 +84,9 @@ protected_paths=(
   '/admin/devpilot-operations.php'
   '/admin/devpilot-device-delete.php'
   '/admin/api/devpilot.php'
+  '/admin/devpilot-websites.php'
+  '/admin/devpilot-website.php?id=1'
+  '/admin/api/devpilot-websites.php'
 )
 for path in "${protected_paths[@]}"; do
   check_status "$path" anonymous 303
@@ -106,5 +109,59 @@ for path in '/admin/devpilot-device-delete.php' '/admin/devpilot-operations.php'
     exit 1
   fi
 done
+
+check_status '/admin/devpilot-website.php' admin 400
+check_status '/admin/devpilot-website.php?id=not-an-id' admin 400
+status="$(curl -sS -o "$TEMP_DIR/body" -w '%{http_code}' -X PATCH -H 'Cookie: kennedy_portfolio=devpilotsmoke1234567890' "http://127.0.0.1:$PORT/admin/api/devpilot-websites.php")"
+if [[ "$status" != 405 ]] || ! grep -q 'Method is not supported' "$TEMP_DIR/body"; then
+  echo "FAIL website API did not safely reject PATCH (HTTP $status)" >&2
+  exit 1
+fi
+
+if [[ "${DEVPILOT_SMOKE_DB_READY:-0}" == "1" ]]; then
+  check_status '/admin/devpilot-websites.php' admin 200
+  check_status '/admin/devpilot-website.php?id=999999' admin 404
+  check_status '/admin/api/devpilot-websites.php' admin 200
+  check_status '/admin/api/devpilot-websites.php?id=not-an-id' admin 400
+
+  status="$(curl -sS -o "$TEMP_DIR/body" -w '%{http_code}' -H 'Cookie: kennedy_portfolio=devpilotsmoke1234567890' -X POST \
+    --data-urlencode 'environment=production' --data-urlencode 'username=phase1-sentinel-user' \
+    --data-urlencode 'password=phase1-sentinel-password' "http://127.0.0.1:$PORT/admin/api/devpilot-websites.php")"
+  if [[ "$status" != 419 ]] || grep -q 'phase1-sentinel-' "$TEMP_DIR/body"; then
+    echo "FAIL website API did not reject mutation without CSRF (HTTP $status)" >&2
+    exit 1
+  fi
+
+  curl -sS -H 'Cookie: kennedy_portfolio=devpilotsmoke1234567890' "http://127.0.0.1:$PORT/admin/devpilot-websites.php" -o "$TEMP_DIR/website-page.html"
+  csrf_token="$(grep -o 'name="csrf_token" value="[a-f0-9]*"' "$TEMP_DIR/website-page.html" | head -n 1 | sed -E 's/.*value="([a-f0-9]+)"/\1/')"
+  if [[ -z "$csrf_token" ]]; then echo 'FAIL website registration page did not provide a CSRF token' >&2; exit 1; fi
+
+  for environment in production unknown; do
+    status="$(curl -sS -o "$TEMP_DIR/body" -w '%{http_code}' -H 'Cookie: kennedy_portfolio=devpilotsmoke1234567890' -X POST \
+      --data-urlencode "csrf_token=$csrf_token" --data-urlencode 'action=register' --data-urlencode 'name=Rejected environment test' \
+      --data-urlencode 'admin_url=https://admin.example.org/' --data-urlencode "environment=$environment" \
+      --data-urlencode 'username=phase1-sentinel-user' --data-urlencode 'password=phase1-sentinel-password' \
+      "http://127.0.0.1:$PORT/admin/api/devpilot-websites.php")"
+    if [[ "$status" != 422 ]] || ! grep -q 'demo or staging' "$TEMP_DIR/body" \
+      || grep -q 'phase1-sentinel-' "$TEMP_DIR/body"; then
+      echo "FAIL website API environment guard for $environment returned unsafe result (HTTP $status)" >&2
+      exit 1
+    fi
+  done
+
+  status="$(curl -sS -o "$TEMP_DIR/body" -w '%{http_code}' -H 'Cookie: kennedy_portfolio=devpilotsmoke1234567890' -X POST \
+    --data-urlencode "csrf_token=$csrf_token" --data-urlencode 'action=register' --data-urlencode 'name=Failed registration field test' \
+    --data-urlencode 'admin_url=https://admin.example.org/' --data-urlencode 'environment=demo' \
+    --data-urlencode 'permissions[]=not_a_permission' --data-urlencode 'username=phase1-sentinel-user' \
+    --data-urlencode 'password=phase1-sentinel-password' "http://127.0.0.1:$PORT/admin/devpilot-websites.php")"
+  if [[ "$status" != 200 ]] || grep -q 'phase1-sentinel-' "$TEMP_DIR/body" \
+    || ! grep -q 'name="username"[^>]*value=""' "$TEMP_DIR/body" \
+    || ! grep -q 'name="password"[^>]*value=""' "$TEMP_DIR/body"; then
+    echo "FAIL failed registration retained credential input (HTTP $status)" >&2
+    exit 1
+  fi
+else
+  echo 'SKIP website database-backed HTTP cases (set DEVPILOT_SMOKE_DB_READY=1 with an isolated local test database)'
+fi
 
 echo 'DevPilot admin HTTP smoke checks passed (unauthenticated redirects and authenticated page/API responses).'

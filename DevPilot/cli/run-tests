@@ -11,6 +11,8 @@ require_once dirname(__DIR__) . '/autoload.php';
 require_once dirname(__DIR__) . '/tests/TestCase.php';
 require_once dirname(__DIR__) . '/tests/DiscoveryTest.php';
 require_once dirname(__DIR__) . '/tests/AdapterCompatibilityTest.php';
+require_once dirname(__DIR__) . '/tests/WebsiteSecurityTest.php';
+require_once dirname(__DIR__) . '/tests/WebsitePersistenceTest.php';
 require_once dirname(__DIR__, 2) . '/admin/includes/devpilot-bootstrap.php';
 
 use DevPilot\Config;
@@ -430,6 +432,18 @@ $results = test('all DevPilot admin entry points authenticate before runtime ini
     }
 }, $testResults);
 
+$results = test('website admin pages and API authenticate before database access', function() {
+    $root = dirname(__DIR__, 2);
+    foreach (['admin/devpilot-websites.php', 'admin/devpilot-website.php', 'admin/api/devpilot-websites.php'] as $relative) {
+        $source = file_get_contents($root . '/' . $relative);
+        assertTrue('website entry point exists: ' . $relative, is_string($source));
+        $auth = strpos($source, "includes/auth.php");
+        $admin = strpos($source, 'requireAdmin();');
+        $database = strpos($source, "includes/db.php");
+        assertTrue('auth and admin gate precede database access: ' . $relative, $auth !== false && $admin !== false && $database !== false && $auth < $admin && $admin < $database);
+    }
+}, $testResults);
+
 $results = test('state changing admin actions retain CSRF validation and POST semantics', function() {
     $root = dirname(__DIR__, 2) . '/admin/';
     $deletePage = file_get_contents($root . 'devpilot-device-delete.php');
@@ -651,6 +665,33 @@ $results = test('logger never logs original secret when redaction fails', functi
 
 echo "\n9. Adapter Compatibility Tests (class-based)\n";
 runTestClass(\DevPilot\Tests\AdapterCompatibilityTest::class, $testResults);
+
+echo "\n9b. Website Registration Security Tests\n";
+runTestClass(\DevPilot\Tests\WebsiteSecurityTest::class, $testResults);
+
+echo "\n9c. Website Route and Side-Effect Boundary Tests\n";
+$results = test('website routes preserve admin auth, CSRF, write-only secrets, and no remote actions', function() {
+    $root = dirname(__DIR__, 2);
+    foreach (['admin/devpilot-websites.php', 'admin/devpilot-website.php', 'admin/api/devpilot-websites.php'] as $relative) {
+        $source = file_get_contents($root . '/' . $relative);
+        assertTrue('website entrypoint exists: ' . $relative, is_string($source));
+        assertTrue('website entrypoint requires admin: ' . $relative, str_contains($source, 'requireAdmin();'));
+    }
+    assertTrue('registration form clears password value', str_contains(file_get_contents($root . '/admin/devpilot-websites.php'), 'name="password" maxlength="4096" autocomplete="new-password" required value=""'));
+    assertTrue('credential replacement form is write-only', str_contains(file_get_contents($root . '/admin/devpilot-website.php'), 'name="password" maxlength="4096" autocomplete="new-password" required value=""'));
+    assertTrue('website API validates CSRF for all mutations', str_contains(file_get_contents($root . '/admin/api/devpilot-websites.php'), 'in_array($method, [\'POST\', \'PUT\', \'DELETE\'], true)'));
+    assertTrue('website API caps request body size', str_contains(file_get_contents($root . '/admin/api/devpilot-websites.php'), '16384'));
+    $websiteSource = file_get_contents($root . '/DevPilot/src/Website/WebsiteRegistrationService.php') . file_get_contents($root . '/DevPilot/src/Website/WebsiteUrlPolicy.php');
+    assertTrue('registration policy has no outbound HTTP or DNS calls', !preg_match('/\b(?:curl_exec|curl_init|stream_socket_client|gethostbyname|dns_get_record)\s*\(/i', $websiteSource));
+    assertTrue('no inspection or operation-execution endpoint is exposed', !preg_match('/\b(?:inspectWebsite|executeWebsiteAction|runWebsiteTask)\s*\(/i', file_get_contents($root . '/admin/api/devpilot-websites.php')));
+}, $testResults);
+
+if (getenv('DEVPILOT_TEST_MODE') === '1') {
+    echo "\n9d. Website Persistence and Authorization Tests\n";
+    runTestClass(\DevPilot\Tests\WebsitePersistenceTest::class, $testResults);
+} else {
+    echo "\n9d. Website Persistence and Authorization Tests\n  - skipped (set DEVPILOT_TEST_MODE=1 and a devpilot_test_* local DSN)\n";
+}
 
 echo "\n10. Registry Persistence Tests\n";
 $results = test('registry persists add across new instance', function() {
