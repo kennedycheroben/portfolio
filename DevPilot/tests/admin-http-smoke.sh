@@ -84,6 +84,9 @@ protected_paths=(
   '/admin/devpilot-operations.php'
   '/admin/devpilot-device-delete.php'
   '/admin/api/devpilot.php'
+  '/admin/devpilot-websites.php'
+  '/admin/devpilot-website.php?id=1'
+  '/admin/api/devpilot-websites.php'
 )
 for path in "${protected_paths[@]}"; do
   check_status "$path" anonymous 303

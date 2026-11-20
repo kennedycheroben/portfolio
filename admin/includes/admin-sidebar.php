@@ -39,6 +39,10 @@ $unreadCount = $unreadCount ?? ($pdo instanceof PDO ? (int) $pdo->query('SELECT 
       <i class="bi bi-gear"></i>
       <span>DevPilot</span>
     </a>
+    <a href="devpilot-websites.php" class="nav-link <?= $adminActiveNav === 'devpilot-websites' ? 'active' : '' ?>">
+      <i class="bi bi-globe2"></i>
+      <span>Registered Websites</span>
+    </a>
 
     <div class="admin-sidebar-tools">
       <!-- Theme Toggle -->
