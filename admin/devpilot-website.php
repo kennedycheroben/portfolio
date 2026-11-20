@@ -6,6 +6,11 @@ require_once __DIR__ . '/../includes/auth.php';
 requireAdmin();
 header('Cache-Control: no-store, private');
 header('Pragma: no-cache');
+$websiteId = filter_input(INPUT_GET, 'id', FILTER_VALIDATE_INT) ?: 0;
+if ($websiteId <= 0) {
+    http_response_code(400);
+    exit('Website ID is invalid.');
+}
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../DevPilot/autoload.php';
 
@@ -16,11 +21,6 @@ use DevPilot\Website\WebsiteServices;
 if (!$pdo instanceof PDO) {
     http_response_code(503);
     exit('Website management is temporarily unavailable.');
-}
-$websiteId = filter_input(INPUT_GET, 'id', FILTER_VALIDATE_INT) ?: 0;
-if ($websiteId <= 0) {
-    http_response_code(400);
-    exit('Website ID is invalid.');
 }
 $service = WebsiteServices::registration($pdo);
 $adminId = WebsiteAuth::currentAdminId();

@@ -40,10 +40,6 @@ header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store, private');
 header('Pragma: no-cache');
 
-if (!$pdo instanceof PDO) {
-    devpilotWebsiteRespond(['error' => 'Website management is temporarily unavailable.'], 503);
-}
-
 $method = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET'));
 $websiteId = 0;
 if (array_key_exists('id', $_GET)) {
@@ -84,6 +80,14 @@ if (in_array($method, ['POST', 'PUT', 'DELETE'], true)) {
     if (!is_string($csrf) || $csrf === '' || !hash_equals(csrf_token(), $csrf)) {
         devpilotWebsiteRespond(['error' => 'Your session expired. Refresh the page and try again.'], 419);
     }
+}
+
+if (!in_array($method, ['GET', 'POST', 'PUT', 'DELETE'], true)) {
+    header('Allow: GET, POST, PUT, DELETE');
+    devpilotWebsiteRespond(['error' => 'Method is not supported.'], 405);
+}
+if (!$pdo instanceof PDO) {
+    devpilotWebsiteRespond(['error' => 'Website management is temporarily unavailable.'], 503);
 }
 
 try {

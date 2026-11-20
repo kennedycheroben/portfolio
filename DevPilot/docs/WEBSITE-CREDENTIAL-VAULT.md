@@ -1,6 +1,8 @@
 # DevPilot website credential vault — operator setup and recovery
 
-Phase 1 will not log in to any registered website. Credential values are stored only after encryption, and there is no API or page that returns a saved value.
+Phase 1 accepts only `demo` and `staging` registrations. Existing environment metadata may still contain `production` or `unknown` for compatibility, but new registrations using either value are rejected. Phase 1 will not log in to any registered website. Credential values are stored only after encryption, and there is no API or page that returns a saved value.
+
+Website URL validation in Phase 1 is syntax-only and makes no DNS lookup or outbound request. Any future outbound connection phase must resolve and validate IP addresses on every connection, validate every redirect target, and protect against DNS rebinding before connecting.
 
 ## Prerequisites
 

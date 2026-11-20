@@ -2,6 +2,7 @@
 -- Review and apply manually to a BACKED UP local/staging database only.
 -- This migration is additive and intentionally does not alter existing tables.
 -- MySQL/MariaDB prepared statements are used so a failed preflight blocks DDL.
+SET SESSION group_concat_max_len = 16384;
 
 SET @devpilot_users_ok := (
   SELECT COUNT(*) = 1
@@ -14,34 +15,50 @@ SET @devpilot_users_ok := (
     AND c.DATA_TYPE = 'int'
     AND c.COLUMN_TYPE NOT LIKE '%unsigned%'
     AND c.IS_NULLABLE = 'NO'
+    AND c.COLUMN_KEY = 'PRI'
+    AND c.EXTRA LIKE '%auto_increment%'
     AND t.ENGINE = 'InnoDB'
 );
+-- Existing objects must match the complete expected columns, indexes, foreign
+-- keys, and engine before CREATE TABLE IF NOT EXISTS can accept them.
 SET @devpilot_existing_tables_ok := (
-  NOT EXISTS (
-    SELECT 1 FROM information_schema.TABLES t
-    WHERE t.TABLE_SCHEMA = DATABASE() AND t.TABLE_NAME = 'devpilot_websites'
-      AND (IFNULL(t.ENGINE, '') <> 'InnoDB' OR (SELECT COUNT(*) FROM information_schema.COLUMNS c WHERE c.TABLE_SCHEMA = t.TABLE_SCHEMA AND c.TABLE_NAME = t.TABLE_NAME AND c.COLUMN_NAME IN ('id','website_uuid','owner_user_id','name','admin_url','origin_host','origin_port','base_path','origin_fingerprint','active_origin_fingerprint','environment','mfa_expected','status','created_at','updated_at','revoked_at')) <> 16)
-  )
-  AND NOT EXISTS (
-    SELECT 1 FROM information_schema.TABLES t
-    WHERE t.TABLE_SCHEMA = DATABASE() AND t.TABLE_NAME = 'devpilot_website_scopes'
-      AND (IFNULL(t.ENGINE, '') <> 'InnoDB' OR (SELECT COUNT(*) FROM information_schema.COLUMNS c WHERE c.TABLE_SCHEMA = t.TABLE_SCHEMA AND c.TABLE_NAME = t.TABLE_NAME AND c.COLUMN_NAME IN ('grant_id','website_id','permission_code','constraints_json','granted_by','granted_at','revoked_at')) <> 7)
-  )
-  AND NOT EXISTS (
-    SELECT 1 FROM information_schema.TABLES t
-    WHERE t.TABLE_SCHEMA = DATABASE() AND t.TABLE_NAME = 'devpilot_website_credentials'
-      AND (IFNULL(t.ENGINE, '') <> 'InnoDB' OR (SELECT COUNT(*) FROM information_schema.COLUMNS c WHERE c.TABLE_SCHEMA = t.TABLE_SCHEMA AND c.TABLE_NAME = t.TABLE_NAME AND c.COLUMN_NAME IN ('credential_uuid','website_id','credential_version','cipher_algorithm','data_key_version','master_key_version','payload_nonce','payload_ciphertext','wrapped_dek_nonce','wrapped_dek','status')) <> 11)
-  )
-  AND NOT EXISTS (
-    SELECT 1 FROM information_schema.TABLES t
-    WHERE t.TABLE_SCHEMA = DATABASE() AND t.TABLE_NAME = 'devpilot_security_audit'
-      AND (IFNULL(t.ENGINE, '') <> 'InnoDB' OR (SELECT COUNT(*) FROM information_schema.COLUMNS c WHERE c.TABLE_SCHEMA = t.TABLE_SCHEMA AND c.TABLE_NAME = t.TABLE_NAME AND c.COLUMN_NAME IN ('id','actor_user_id','website_id','event_code','outcome','request_uuid','details_json','created_at')) <> 8)
-  )
+  (NOT EXISTS (SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='devpilot_websites') OR (
+    (SELECT ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='devpilot_websites')='InnoDB'
+    AND (SELECT TABLE_COLLATION FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='devpilot_websites')='utf8mb4_unicode_ci'
+    AND (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='devpilot_websites' AND COLUMN_NAME='origin_host' AND CHARACTER_SET_NAME='ascii' AND COLLATION_NAME='ascii_bin')=1
+    AND (SELECT GROUP_CONCAT(CONCAT(COLUMN_NAME,'=',CASE WHEN DATA_TYPE IN ('int','bigint','smallint','tinyint') THEN CONCAT(DATA_TYPE,IF(COLUMN_TYPE LIKE '%unsigned%',' unsigned','')) ELSE COLUMN_TYPE END,':',IS_NULLABLE,':',IFNULL(COLUMN_DEFAULT,'<NULL>'),':',EXTRA) ORDER BY COLUMN_NAME SEPARATOR '|') FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='devpilot_websites')='active_origin_fingerprint=binary(32):YES:NULL:|admin_url=varchar(2048):NO:<NULL>:|base_path=varchar(1024):NO:\'/\':|created_at=timestamp:NO:current_timestamp():|environment=varchar(24):NO:<NULL>:|id=bigint unsigned:NO:<NULL>:auto_increment|mfa_expected=tinyint:NO:0:|name=varchar(120):NO:<NULL>:|origin_fingerprint=binary(32):NO:<NULL>:|origin_host=varchar(253):NO:<NULL>:|origin_port=smallint unsigned:NO:443:|owner_user_id=int:NO:<NULL>:|revoked_at=timestamp:YES:NULL:|status=varchar(16):NO:\'active\':|updated_at=timestamp:NO:current_timestamp():on update current_timestamp()|website_uuid=binary(16):NO:<NULL>:'
+    AND (SELECT GROUP_CONCAT(CONCAT(INDEX_NAME,':',NON_UNIQUE,':',SEQ_IN_INDEX,':',COLUMN_NAME) ORDER BY INDEX_NAME,SEQ_IN_INDEX SEPARATOR '|') FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='devpilot_websites')='idx_devpilot_websites_owner_status:1:1:owner_user_id|idx_devpilot_websites_owner_status:1:2:status|idx_devpilot_websites_owner_status:1:3:created_at|PRIMARY:0:1:id|uq_devpilot_websites_owner_active_origin:0:1:owner_user_id|uq_devpilot_websites_owner_active_origin:0:2:active_origin_fingerprint|uq_devpilot_websites_uuid:0:1:website_uuid'
+    AND (SELECT GROUP_CONCAT(CONCAT(k.CONSTRAINT_NAME,':',k.COLUMN_NAME,'>',k.REFERENCED_TABLE_NAME,'.',k.REFERENCED_COLUMN_NAME,':',r.DELETE_RULE,':',r.UPDATE_RULE) ORDER BY k.CONSTRAINT_NAME SEPARATOR '|') FROM information_schema.KEY_COLUMN_USAGE k JOIN information_schema.REFERENTIAL_CONSTRAINTS r ON r.CONSTRAINT_SCHEMA=k.CONSTRAINT_SCHEMA AND r.CONSTRAINT_NAME=k.CONSTRAINT_NAME AND r.TABLE_NAME=k.TABLE_NAME WHERE k.CONSTRAINT_SCHEMA=DATABASE() AND k.TABLE_NAME='devpilot_websites' AND k.REFERENCED_TABLE_NAME IS NOT NULL)='fk_devpilot_websites_owner:owner_user_id>users.id:RESTRICT:RESTRICT'
+  ))
+  AND (NOT EXISTS (SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='devpilot_website_scopes') OR (
+    (SELECT ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='devpilot_website_scopes')='InnoDB'
+    AND (SELECT TABLE_COLLATION FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='devpilot_website_scopes')='utf8mb4_unicode_ci'
+    AND (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='devpilot_website_scopes' AND COLUMN_NAME='permission_code' AND CHARACTER_SET_NAME='ascii' AND COLLATION_NAME='ascii_bin')=1
+    AND (SELECT GROUP_CONCAT(CONCAT(COLUMN_NAME,'=',CASE WHEN DATA_TYPE IN ('int','bigint','smallint','tinyint') THEN CONCAT(DATA_TYPE,IF(COLUMN_TYPE LIKE '%unsigned%',' unsigned','')) ELSE COLUMN_TYPE END,':',IS_NULLABLE,':',IFNULL(COLUMN_DEFAULT,'<NULL>'),':',EXTRA) ORDER BY COLUMN_NAME SEPARATOR '|') FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='devpilot_website_scopes')='constraints_json=longtext:NO:<NULL>:|granted_at=timestamp:NO:current_timestamp():|granted_by=int:NO:<NULL>:|grant_id=bigint unsigned:NO:<NULL>:auto_increment|permission_code=varchar(64):NO:<NULL>:|revoked_at=timestamp:YES:NULL:|website_id=bigint unsigned:NO:<NULL>:'
+    AND (SELECT GROUP_CONCAT(CONCAT(INDEX_NAME,':',NON_UNIQUE,':',SEQ_IN_INDEX,':',COLUMN_NAME) ORDER BY INDEX_NAME,SEQ_IN_INDEX SEPARATOR '|') FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='devpilot_website_scopes')='idx_devpilot_scopes_granted_by:1:1:granted_by|idx_devpilot_scopes_granted_by:1:2:granted_at|idx_devpilot_scopes_website_active:1:1:website_id|idx_devpilot_scopes_website_active:1:2:revoked_at|idx_devpilot_scopes_website_active:1:3:permission_code|PRIMARY:0:1:grant_id'
+    AND (SELECT GROUP_CONCAT(CONCAT(k.CONSTRAINT_NAME,':',k.COLUMN_NAME,'>',k.REFERENCED_TABLE_NAME,'.',k.REFERENCED_COLUMN_NAME,':',r.DELETE_RULE,':',r.UPDATE_RULE) ORDER BY k.CONSTRAINT_NAME SEPARATOR '|') FROM information_schema.KEY_COLUMN_USAGE k JOIN information_schema.REFERENTIAL_CONSTRAINTS r ON r.CONSTRAINT_SCHEMA=k.CONSTRAINT_SCHEMA AND r.CONSTRAINT_NAME=k.CONSTRAINT_NAME AND r.TABLE_NAME=k.TABLE_NAME WHERE k.CONSTRAINT_SCHEMA=DATABASE() AND k.TABLE_NAME='devpilot_website_scopes' AND k.REFERENCED_TABLE_NAME IS NOT NULL)='fk_devpilot_scopes_granted_by:granted_by>users.id:RESTRICT:RESTRICT|fk_devpilot_scopes_website:website_id>devpilot_websites.id:RESTRICT:RESTRICT'
+  ))
+  AND (NOT EXISTS (SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='devpilot_website_credentials') OR (
+    (SELECT ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='devpilot_website_credentials')='InnoDB'
+    AND (SELECT TABLE_COLLATION FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='devpilot_website_credentials')='utf8mb4_unicode_ci'
+    AND (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='devpilot_website_credentials' AND COLUMN_NAME IN ('credential_kind','cipher_algorithm','data_key_version','master_key_version') AND CHARACTER_SET_NAME='ascii' AND COLLATION_NAME='ascii_bin')=4
+    AND (SELECT GROUP_CONCAT(CONCAT(COLUMN_NAME,'=',CASE WHEN DATA_TYPE IN ('int','bigint','smallint','tinyint') THEN CONCAT(DATA_TYPE,IF(COLUMN_TYPE LIKE '%unsigned%',' unsigned','')) ELSE COLUMN_TYPE END,':',IS_NULLABLE,':',IFNULL(COLUMN_DEFAULT,'<NULL>'),':',EXTRA) ORDER BY COLUMN_NAME SEPARATOR '|') FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='devpilot_website_credentials')='cipher_algorithm=varchar(48):NO:<NULL>:|created_at=timestamp:NO:current_timestamp():|credential_kind=varchar(32):NO:<NULL>:|credential_uuid=binary(16):NO:<NULL>:|credential_version=int unsigned:NO:<NULL>:|data_key_version=varchar(32):NO:<NULL>:|id=bigint unsigned:NO:<NULL>:auto_increment|master_key_version=varchar(32):NO:<NULL>:|payload_ciphertext=mediumblob:YES:NULL:|payload_nonce=varbinary(24):YES:NULL:|replaced_by=bigint unsigned:YES:NULL:|revoked_at=timestamp:YES:NULL:|status=varchar(16):NO:\'active\':|website_id=bigint unsigned:NO:<NULL>:|wrapped_dek=varbinary(64):YES:NULL:|wrapped_dek_nonce=varbinary(24):YES:NULL:'
+    AND (SELECT GROUP_CONCAT(CONCAT(INDEX_NAME,':',NON_UNIQUE,':',SEQ_IN_INDEX,':',COLUMN_NAME) ORDER BY INDEX_NAME,SEQ_IN_INDEX SEPARATOR '|') FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='devpilot_website_credentials')='fk_devpilot_credentials_replaced_by:1:1:replaced_by|idx_devpilot_credentials_website_status:1:1:website_id|idx_devpilot_credentials_website_status:1:2:status|PRIMARY:0:1:id|uq_devpilot_credential_uuid:0:1:credential_uuid|uq_devpilot_credential_version:0:1:website_id|uq_devpilot_credential_version:0:2:credential_version'
+    AND (SELECT GROUP_CONCAT(CONCAT(k.CONSTRAINT_NAME,':',k.COLUMN_NAME,'>',k.REFERENCED_TABLE_NAME,'.',k.REFERENCED_COLUMN_NAME,':',r.DELETE_RULE,':',r.UPDATE_RULE) ORDER BY k.CONSTRAINT_NAME SEPARATOR '|') FROM information_schema.KEY_COLUMN_USAGE k JOIN information_schema.REFERENTIAL_CONSTRAINTS r ON r.CONSTRAINT_SCHEMA=k.CONSTRAINT_SCHEMA AND r.CONSTRAINT_NAME=k.CONSTRAINT_NAME AND r.TABLE_NAME=k.TABLE_NAME WHERE k.CONSTRAINT_SCHEMA=DATABASE() AND k.TABLE_NAME='devpilot_website_credentials' AND k.REFERENCED_TABLE_NAME IS NOT NULL)='fk_devpilot_credentials_replaced_by:replaced_by>devpilot_website_credentials.id:RESTRICT:RESTRICT|fk_devpilot_credentials_website:website_id>devpilot_websites.id:RESTRICT:RESTRICT'
+  ))
+  AND (NOT EXISTS (SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='devpilot_security_audit') OR (
+    (SELECT ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='devpilot_security_audit')='InnoDB'
+    AND (SELECT TABLE_COLLATION FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='devpilot_security_audit')='utf8mb4_unicode_ci'
+    AND (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='devpilot_security_audit' AND COLUMN_NAME IN ('event_code','outcome') AND CHARACTER_SET_NAME='ascii' AND COLLATION_NAME='ascii_bin')=2
+    AND (SELECT GROUP_CONCAT(CONCAT(COLUMN_NAME,'=',CASE WHEN DATA_TYPE IN ('int','bigint','smallint','tinyint') THEN CONCAT(DATA_TYPE,IF(COLUMN_TYPE LIKE '%unsigned%',' unsigned','')) ELSE COLUMN_TYPE END,':',IS_NULLABLE,':',IFNULL(COLUMN_DEFAULT,'<NULL>'),':',EXTRA) ORDER BY COLUMN_NAME SEPARATOR '|') FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='devpilot_security_audit')='actor_user_id=int:YES:NULL:|created_at=timestamp:NO:current_timestamp():|details_json=longtext:YES:NULL:|event_code=varchar(48):NO:<NULL>:|id=bigint unsigned:NO:<NULL>:auto_increment|outcome=varchar(16):NO:<NULL>:|request_uuid=binary(16):NO:<NULL>:|website_id=bigint unsigned:YES:NULL:'
+    AND (SELECT GROUP_CONCAT(CONCAT(INDEX_NAME,':',NON_UNIQUE,':',SEQ_IN_INDEX,':',COLUMN_NAME) ORDER BY INDEX_NAME,SEQ_IN_INDEX SEPARATOR '|') FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='devpilot_security_audit')='idx_devpilot_audit_actor_created:1:1:actor_user_id|idx_devpilot_audit_actor_created:1:2:created_at|idx_devpilot_audit_website_created:1:1:website_id|idx_devpilot_audit_website_created:1:2:created_at|PRIMARY:0:1:id'
+    AND (SELECT GROUP_CONCAT(CONCAT(k.CONSTRAINT_NAME,':',k.COLUMN_NAME,'>',k.REFERENCED_TABLE_NAME,'.',k.REFERENCED_COLUMN_NAME,':',r.DELETE_RULE,':',r.UPDATE_RULE) ORDER BY k.CONSTRAINT_NAME SEPARATOR '|') FROM information_schema.KEY_COLUMN_USAGE k JOIN information_schema.REFERENTIAL_CONSTRAINTS r ON r.CONSTRAINT_SCHEMA=k.CONSTRAINT_SCHEMA AND r.CONSTRAINT_NAME=k.CONSTRAINT_NAME AND r.TABLE_NAME=k.TABLE_NAME WHERE k.CONSTRAINT_SCHEMA=DATABASE() AND k.TABLE_NAME='devpilot_security_audit' AND k.REFERENCED_TABLE_NAME IS NOT NULL)='fk_devpilot_audit_actor:actor_user_id>users.id:SET NULL:RESTRICT|fk_devpilot_audit_website:website_id>devpilot_websites.id:SET NULL:RESTRICT'
+  ))
 );
 SET @devpilot_preflight_sql := IF(
   @devpilot_users_ok AND @devpilot_existing_tables_ok,
   'SELECT 1',
-  'SELECT * FROM `__devpilot_migration_003_prerequisite_failed__`'
+  'SELECT * FROM `__devpilot_migration_003_schema_incompatible__`'
 );
 PREPARE devpilot_preflight FROM @devpilot_preflight_sql;
 EXECUTE devpilot_preflight;
@@ -127,26 +144,19 @@ CREATE TABLE IF NOT EXISTS `devpilot_security_audit` (
   CONSTRAINT `fk_devpilot_audit_website` FOREIGN KEY (`website_id`) REFERENCES `devpilot_websites` (`id`) ON DELETE SET NULL ON UPDATE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Detect pre-existing objects that CREATE TABLE IF NOT EXISTS would otherwise
--- silently accept with an incompatible schema or engine.
-SET @devpilot_tables_ok := (
-  SELECT COUNT(DISTINCT t.TABLE_NAME) = 4
-  FROM information_schema.TABLES t
-  WHERE t.TABLE_SCHEMA = DATABASE()
-    AND t.ENGINE = 'InnoDB'
-    AND t.TABLE_NAME IN ('devpilot_websites', 'devpilot_website_scopes', 'devpilot_website_credentials', 'devpilot_security_audit')
-);
-SET @devpilot_columns_ok := (
-  SELECT COUNT(*) = 42
-  FROM information_schema.COLUMNS
-  WHERE TABLE_SCHEMA = DATABASE()
-    AND ((TABLE_NAME = 'devpilot_websites' AND COLUMN_NAME IN ('id','website_uuid','owner_user_id','name','admin_url','origin_host','origin_port','base_path','origin_fingerprint','active_origin_fingerprint','environment','mfa_expected','status','created_at','updated_at','revoked_at'))
-      OR (TABLE_NAME = 'devpilot_website_scopes' AND COLUMN_NAME IN ('grant_id','website_id','permission_code','constraints_json','granted_by','granted_at','revoked_at'))
-      OR (TABLE_NAME = 'devpilot_website_credentials' AND COLUMN_NAME IN ('credential_uuid','website_id','credential_version','cipher_algorithm','data_key_version','master_key_version','payload_nonce','payload_ciphertext','wrapped_dek_nonce','wrapped_dek','status'))
-      OR (TABLE_NAME = 'devpilot_security_audit' AND COLUMN_NAME IN ('id','actor_user_id','website_id','event_code','outcome','request_uuid','details_json','created_at')))
+-- Verify actual resulting structure, including exact ordered definitions, keys,
+-- constraints, collations, defaults, and engines (not just table/column counts).
+SET @devpilot_final_schema_ok := (
+  (SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN ('devpilot_websites','devpilot_website_scopes','devpilot_website_credentials','devpilot_security_audit') AND ENGINE='InnoDB' AND TABLE_COLLATION='utf8mb4_unicode_ci')=4
+  AND (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN ('devpilot_websites','devpilot_website_scopes','devpilot_website_credentials','devpilot_security_audit'))=47
+  AND (SELECT SHA2(GROUP_CONCAT(CONCAT(TABLE_NAME,'=',COLUMN_NAME,'=',CASE WHEN DATA_TYPE IN ('int','bigint','smallint','tinyint') THEN CONCAT(DATA_TYPE,IF(COLUMN_TYPE LIKE '%unsigned%',' unsigned','')) ELSE COLUMN_TYPE END,':',IS_NULLABLE,':',IFNULL(COLUMN_DEFAULT,'<NULL>'),':',EXTRA,':',IFNULL(CHARACTER_SET_NAME,'<NULL>'),':',IFNULL(COLLATION_NAME,'<NULL>')) ORDER BY TABLE_NAME,COLUMN_NAME SEPARATOR '|'),256) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN ('devpilot_websites','devpilot_website_scopes','devpilot_website_credentials','devpilot_security_audit'))='557157a50a17f225df29091b398d49a9b61c3ac412f07add83228f47a29641df'
+  AND (SELECT SHA2(GROUP_CONCAT(CONCAT(TABLE_NAME,'=',INDEX_NAME,':',NON_UNIQUE,':',SEQ_IN_INDEX,':',COLUMN_NAME) ORDER BY TABLE_NAME,INDEX_NAME,SEQ_IN_INDEX SEPARATOR '|'),256) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN ('devpilot_websites','devpilot_website_scopes','devpilot_website_credentials','devpilot_security_audit'))='3697cde673b2b5038b18c81b2c7b1aba08a29413f1e08d56dfbc0fb90a05825a'
+  AND (SELECT COUNT(*) FROM information_schema.KEY_COLUMN_USAGE WHERE CONSTRAINT_SCHEMA=DATABASE() AND TABLE_NAME IN ('devpilot_websites','devpilot_website_scopes','devpilot_website_credentials','devpilot_security_audit') AND REFERENCED_TABLE_NAME IS NOT NULL)=7
+  AND (SELECT SHA2(GROUP_CONCAT(CONCAT(k.TABLE_NAME,'=',k.CONSTRAINT_NAME,':',k.COLUMN_NAME,'>',k.REFERENCED_TABLE_NAME,'.',k.REFERENCED_COLUMN_NAME,':',r.DELETE_RULE,':',r.UPDATE_RULE) ORDER BY k.TABLE_NAME,k.CONSTRAINT_NAME SEPARATOR '|'),256) FROM information_schema.KEY_COLUMN_USAGE k JOIN information_schema.REFERENTIAL_CONSTRAINTS r ON r.CONSTRAINT_SCHEMA=k.CONSTRAINT_SCHEMA AND r.CONSTRAINT_NAME=k.CONSTRAINT_NAME AND r.TABLE_NAME=k.TABLE_NAME WHERE k.CONSTRAINT_SCHEMA=DATABASE() AND k.TABLE_NAME IN ('devpilot_websites','devpilot_website_scopes','devpilot_website_credentials','devpilot_security_audit') AND k.REFERENCED_TABLE_NAME IS NOT NULL)='9866e6ff9cf49227f9aed969f53b8e3b65cbc9a591c7719f0e38ea446f43d4b7'
+  AND (SELECT COUNT(*) FROM information_schema.COLUMNS c JOIN information_schema.TABLES t ON t.TABLE_SCHEMA=c.TABLE_SCHEMA AND t.TABLE_NAME=c.TABLE_NAME WHERE c.TABLE_SCHEMA=DATABASE() AND c.TABLE_NAME='users' AND c.COLUMN_NAME='id' AND c.DATA_TYPE='int' AND c.COLUMN_TYPE NOT LIKE '%unsigned%' AND c.IS_NULLABLE='NO' AND c.COLUMN_KEY='PRI' AND c.EXTRA LIKE '%auto_increment%' AND t.ENGINE='InnoDB')=1
 );
 SET @devpilot_final_sql := IF(
-  @devpilot_users_ok AND @devpilot_tables_ok AND @devpilot_columns_ok,
+  @devpilot_users_ok AND @devpilot_final_schema_ok,
   'SELECT 1',
   'SELECT * FROM `__devpilot_migration_003_schema_verification_failed__`'
 );

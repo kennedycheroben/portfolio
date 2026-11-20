@@ -22,8 +22,27 @@ $service = WebsiteServices::registration($pdo);
 $adminId = WebsiteAuth::currentAdminId();
 $error = '';
 $created = false;
+$postedUsername = '';
+$postedPassword = '';
+$wipePostedCredentials = static function () use (&$postedUsername, &$postedPassword): void {
+    foreach (['postedUsername', 'postedPassword'] as $variable) {
+        if ($$variable !== '' && function_exists('sodium_memzero')) {
+            sodium_memzero($$variable);
+        } else {
+            $$variable = '';
+        }
+    }
+};
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    verify_csrf();
+    $postedUsername = input_string($_POST, 'username');
+    $postedPassword = input_string($_POST, 'password', false);
+    unset($_POST['username'], $_POST['password']);
+    $csrf = $_POST['csrf_token'] ?? '';
+    if (!is_string($csrf) || $csrf === '' || !hash_equals(csrf_token(), $csrf)) {
+        $wipePostedCredentials();
+        http_response_code(419);
+        exit('Your session expired. Refresh the page and try again.');
+    }
     try {
         $permissions = $_POST['permissions'] ?? [];
         if (!is_array($permissions)) {
@@ -36,11 +55,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'mfa_expected' => isset($_POST['mfa_expected']),
             'permissions' => $permissions,
             'credentials' => [
-                'username' => input_string($_POST, 'username'),
-                'password' => input_string($_POST, 'password', false),
+                'username' => $postedUsername,
+                'password' => $postedPassword,
             ],
         ], $adminId);
         $_POST = [];
+        $wipePostedCredentials();
         header('Location: devpilot-website.php?id=' . $id . '&created=1', true, 303);
         exit;
     } catch (InvalidArgumentException $exception) {
@@ -49,9 +69,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         error_log('DevPilot website registration failed: ' . get_class($exception));
         $error = 'The website could not be registered. Check the database and vault key configuration.';
     } finally {
-        if (isset($_POST['password'])) {
-            unset($_POST['password']);
-        }
+        $wipePostedCredentials();
     }
 }
 
@@ -85,9 +103,9 @@ require __DIR__ . '/includes/admin-sidebar.php';
         <div class="row g-3">
           <div class="col-md-6"><label class="form-label" for="website-name">Website name</label><input class="form-control" id="website-name" name="name" maxlength="120" required value="<?= e(input_string($_POST, 'name')) ?>"></div>
           <div class="col-md-6"><label class="form-label" for="website-environment">Environment</label>
-            <?php $environment = input_string($_POST, 'environment') ?: 'unknown'; ?>
+            <?php $environment = input_string($_POST, 'environment') ?: 'demo'; ?>
             <select class="form-select" id="website-environment" name="environment" required>
-              <?php foreach (['demo' => 'Demo', 'staging' => 'Staging', 'production' => 'Production', 'unknown' => 'Unknown'] as $value => $label): ?>
+              <?php foreach (['demo' => 'Demo', 'staging' => 'Staging'] as $value => $label): ?>
                 <option value="<?= e($value) ?>" <?= $environment === $value ? 'selected' : '' ?>><?= e($label) ?></option>
               <?php endforeach; ?>
             </select>

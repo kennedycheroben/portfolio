@@ -126,6 +126,16 @@ final class WebsitePersistenceTest
         if ($reauthorizedId === $websiteId || $service->detail($reauthorizedId, 1)['website']['status'] !== 'active') {
             throw new RuntimeException('A revoked origin could not be registered again with a new identity.');
         }
+        $stagingId = $service->register([
+            'name' => 'Staging test website',
+            'admin_url' => 'https://staging.example.org/admin',
+            'environment' => 'staging',
+            'permissions' => [],
+            'credentials' => ['username' => 'staging-operator', 'password' => 'staging-secret'],
+        ], 1);
+        if ($service->detail($stagingId, 1)['website']['environment'] !== 'staging') {
+            throw new RuntimeException('A staging website could not be registered.');
+        }
     }
 
     private function freshFixture(): array

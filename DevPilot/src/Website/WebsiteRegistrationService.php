@@ -10,7 +10,7 @@ use Throwable;
 
 final class WebsiteRegistrationService
 {
-    private const ENVIRONMENTS = ['demo', 'staging', 'production', 'unknown'];
+    private const REGISTRABLE_ENVIRONMENTS = ['demo', 'staging'];
 
     public function __construct(
         private readonly PDO $pdo,
@@ -25,6 +25,15 @@ final class WebsiteRegistrationService
 
     public function register(array $input, int $ownerId): int
     {
+        try {
+            return $this->registerValidated($input, $ownerId);
+        } finally {
+            $this->wipeCredentials($input['credentials'] ?? null);
+        }
+    }
+
+    private function registerValidated(array $input, int $ownerId): int
+    {
         $this->validateOwner($ownerId);
         $name = trim(is_string($input['name'] ?? null) ? $input['name'] : '');
         $nameLength = function_exists('mb_strlen') ? mb_strlen($name, 'UTF-8') : strlen($name);
@@ -33,8 +42,8 @@ final class WebsiteRegistrationService
         }
         $url = $this->urlPolicy->normalize(is_string($input['admin_url'] ?? null) ? $input['admin_url'] : '');
         $environment = $input['environment'] ?? 'unknown';
-        if (!is_string($environment) || !in_array($environment, self::ENVIRONMENTS, true)) {
-            throw new InvalidArgumentException('Select a supported website environment.');
+        if (!is_string($environment) || !in_array($environment, self::REGISTRABLE_ENVIRONMENTS, true)) {
+            throw new InvalidArgumentException('New websites can only be registered as demo or staging.');
         }
         $permissionInput = $input['permissions'] ?? [];
         if (!is_array($permissionInput)) {
@@ -75,17 +84,11 @@ final class WebsiteRegistrationService
                 throw $exception;
             }
         } finally {
-            if (isset($input['credentials']['password']) && is_string($input['credentials']['password'])) {
-                sodium_memzero($input['credentials']['password']);
-            }
-            if (isset($input['credentials']['username']) && is_string($input['credentials']['username'])) {
-                sodium_memzero($input['credentials']['username']);
-            }
             if (isset($credential['password']) && is_string($credential['password'])) {
-                sodium_memzero($credential['password']);
+                $this->wipeCredentials(['password' => $credential['password']]);
             }
             if (isset($credential['username']) && is_string($credential['username'])) {
-                sodium_memzero($credential['username']);
+                $this->wipeCredentials(['username' => $credential['username']]);
             }
         }
     }
@@ -132,16 +135,16 @@ final class WebsiteRegistrationService
             throw $exception;
         } finally {
             if (isset($input['password']) && is_string($input['password'])) {
-                sodium_memzero($input['password']);
+                $this->wipeCredentials(['password' => $input['password']]);
             }
             if (isset($input['username']) && is_string($input['username'])) {
-                sodium_memzero($input['username']);
+                $this->wipeCredentials(['username' => $input['username']]);
             }
             if (isset($credential['password']) && is_string($credential['password'])) {
-                sodium_memzero($credential['password']);
+                $this->wipeCredentials(['password' => $credential['password']]);
             }
             if (isset($credential['username']) && is_string($credential['username'])) {
-                sodium_memzero($credential['username']);
+                $this->wipeCredentials(['username' => $credential['username']]);
             }
         }
     }
@@ -210,9 +213,24 @@ final class WebsiteRegistrationService
             throw new InvalidArgumentException('Enter a valid username and password.');
         }
         $normalized = ['username' => trim($username), 'password' => $password];
-        sodium_memzero($input['username']);
-        sodium_memzero($input['password']);
+        $this->wipeCredentials($input);
         return $normalized;
+    }
+
+    private function wipeCredentials(mixed $credentials): void
+    {
+        if (!is_array($credentials)) {
+            return;
+        }
+        foreach (['username', 'password'] as $field) {
+            if (isset($credentials[$field]) && is_string($credentials[$field])) {
+                if (function_exists('sodium_memzero')) {
+                    sodium_memzero($credentials[$field]);
+                } else {
+                    $credentials[$field] = '';
+                }
+            }
+        }
     }
 
     private function normalizeBoolean(mixed $value): bool

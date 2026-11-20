@@ -8,6 +8,7 @@ use DevPilot\Website\VaultKeyring;
 use DevPilot\Website\WebsiteScopePolicy;
 use DevPilot\Website\WebsiteUrlPolicy;
 use InvalidArgumentException;
+use PDO;
 use RuntimeException;
 
 final class WebsiteSecurityTest
@@ -23,6 +24,18 @@ final class WebsiteSecurityTest
             'http://admin.example.org/',
             'https://user:pass@admin.example.org/',
             'https://127.0.0.1/admin',
+            'https://10.0.0.1/admin',
+            'https://169.254.169.254/latest/meta-data/',
+            'https://224.0.0.1/admin',
+            'https://192.0.2.1/admin',
+            'https://[::1]/admin',
+            'https://0x7f.0x0.0x0.1/',
+            'https://0x7f000001/',
+            'https://0177.0.0.1/',
+            'https://127.0x0.0.1/',
+            'https://127.1/',
+            'https://2130706433/',
+            'https://0x0a.0x0.0x0.1/',
             'https://localhost/admin',
             'https://dashboard.internal/admin',
             'https://admin.example.org:8443/admin',
@@ -41,6 +54,60 @@ final class WebsiteSecurityTest
         $source = file_get_contents(dirname(__DIR__) . '/src/Website/WebsiteUrlPolicy.php');
         if (!is_string($source) || preg_match('/\b(?:curl_exec|curl_init|stream_socket_client|gethostbyname|dns_get_record)\s*\(/i', $source)) {
             throw new RuntimeException('URL validation contains an outbound network call.');
+        }
+    }
+
+    public function testRegistrationAllowsOnlyDemoAndStagingEnvironments(): void
+    {
+        $pdo = new class extends PDO {
+            public function __construct() {}
+        };
+        $service = \DevPilot\Website\WebsiteServices::registration($pdo);
+        $registrationPage = file_get_contents(dirname(__DIR__, 2) . '/admin/devpilot-websites.php');
+        if (!is_string($registrationPage)
+            || !str_contains($registrationPage, "['demo' => 'Demo', 'staging' => 'Staging']")) {
+            throw new RuntimeException('Registration UI exposes an unapproved environment choice.');
+        }
+        foreach (['production', 'unknown'] as $environment) {
+            try {
+                $service->register([
+                    'name' => 'Environment validation test',
+                    'admin_url' => 'https://admin.example.org/',
+                    'environment' => $environment,
+                    'permissions' => [],
+                    'credentials' => ['username' => 'test', 'password' => 'test-secret'],
+                ], 1);
+                throw new RuntimeException('Disallowed registration environment was accepted.');
+            } catch (InvalidArgumentException $exception) {
+                if ($exception->getMessage() !== 'New websites can only be registered as demo or staging.') {
+                    throw new RuntimeException('Registration returned an unsafe environment error.');
+                }
+            }
+        }
+        foreach (['demo', 'staging'] as $environment) {
+            try {
+                $service->register([
+                    'name' => 'Environment validation test',
+                    'admin_url' => 'https://admin.example.org/',
+                    'environment' => $environment,
+                    'permissions' => [],
+                    'credentials' => [],
+                ], 1);
+            } catch (InvalidArgumentException $exception) {
+                if ($exception->getMessage() !== 'Enter a valid username and password.') {
+                    throw $exception;
+                }
+            }
+        }
+    }
+
+    public function testFailedRegistrationInputFieldsAreNeverRepopulated(): void
+    {
+        $source = file_get_contents(dirname(__DIR__, 2) . '/admin/devpilot-websites.php');
+        if (!is_string($source)
+            || !str_contains($source, "unset(\$_POST['username'], \$_POST['password']);")
+            || preg_match('/name="(?:username|password)"[^>]*value="<\?=/', $source)) {
+            throw new RuntimeException('Registration inputs are not cleared after failure or are repopulated.');
         }
     }
 

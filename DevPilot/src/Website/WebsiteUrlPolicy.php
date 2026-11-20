@@ -32,9 +32,11 @@ final class WebsiteUrlPolicy
             throw new InvalidArgumentException('Use a public DNS hostname on the standard HTTPS port.');
         }
 
-        // Reject alternate numeric IPv4 spellings and local-only suffixes. This is
-        // syntax validation only; DNS is intentionally not resolved in Phase 1.
+        // Browser URL parsers treat a numeric final label as an IPv4 address and
+        // accept decimal, octal, hexadecimal, shortened, and integer forms. Reject
+        // those spellings before storing a hostname. This remains syntax-only.
         if (preg_match('/^[0-9.]+$/', $host)
+            || preg_match('/(?:^|\.)(?:0x[0-9a-f]*|[0-9]+)$/i', $host)
             || !str_contains($host, '.')
             || preg_match('/\.(?:localhost|local|internal|test|invalid|example)$/', $host)) {
             throw new InvalidArgumentException('Use a public DNS hostname. Local and reserved hostnames are not allowed.');
