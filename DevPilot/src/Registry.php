@@ -105,10 +105,9 @@ final class Registry
             $this->writeToDisk();
 
             return $result;
-        } catch (Throwable $e) {
-            // Release lock before re-throwing
+        } finally {
+            // Always release lock, even on exception
             $this->releaseLock($handle);
-            throw $e;
         }
     }
 

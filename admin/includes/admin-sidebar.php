@@ -35,6 +35,11 @@ $unreadCount = $unreadCount ?? ($pdo instanceof PDO ? (int) $pdo->query('SELECT 
       <span>View Live Site</span>
     </a>
 
+    <a href="devpilot.php" class="nav-link <?= $adminActiveNav === 'devpilot' ? 'active' : '' ?>">
+      <i class="bi bi-gear"></i>
+      <span>DevPilot</span>
+    </a>
+
     <div class="admin-sidebar-tools">
       <!-- Theme Toggle -->
       <button type="button" class="theme-toggle-btn" id="adminThemeToggle" onclick="toggleAdminTheme()" aria-label="Toggle light or dark theme">

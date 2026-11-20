@@ -27,9 +27,19 @@ abstract class TestCase
 
     private static function removeDirectory(string $dir): void
     {
-        $files = glob($dir . '/*');
-        foreach ($files as $file) {
-            is_dir($file) ? self::removeDirectory($file) : unlink($file);
+        if (!is_dir($dir)) {
+            return;
+        }
+        $iterator = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($dir, \RecursiveDirectoryIterator::SKIP_DOTS),
+            \RecursiveIteratorIterator::CHILD_FIRST
+        );
+        foreach ($iterator as $file) {
+            if ($file->isDir()) {
+                rmdir($file->getPathname());
+            } else {
+                unlink($file->getPathname());
+            }
         }
         rmdir($dir);
     }

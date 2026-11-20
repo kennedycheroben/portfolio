@@ -2,6 +2,13 @@
 
 # Runtime data
 registry/projects.json
+registry/operations.json
+
+# Device credentials (stored outside public root)
+devpilot_devices.json
+
+# Lock files
+composer.lock
 
 # Audit reports (contain infrastructure details)
 PHASE0_AUDIT.md

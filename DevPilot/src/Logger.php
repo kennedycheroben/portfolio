@@ -16,15 +16,14 @@ final class Logger
         'secret',
         'token',
         'apikey',
-        'apikey',
-        'authorization',
         'accesstoken',
-        'accesstoken',
-        'refreshtoken',
+        'refresh_token',
         'clientsecret',
         'databasepassword',
         'dbpass',
         'dbpassword',
+        'authorization',
+        'bearer',
     ];
 
     public static function init(string $root): void
@@ -105,23 +104,59 @@ final class Logger
         return $message;
     }
 
-    private static function redactContext(array $context): array
+    private static function redactContext(array $context, int $depth = 0): array
     {
         $redacted = [];
+        $maxDepth = 10;
+
+        if ($depth > $maxDepth) {
+            return ['***NESTING_LIMIT***'];
+        }
 
         foreach ($context as $key => $value) {
-            if (self::isSensitiveKey($key)) {
+            if (self::isSensitiveKey((string) $key)) {
                 $redacted[$key] = '***REDACTED***';
             } elseif (is_string($value)) {
                 $redacted[$key] = self::redactMessage($value);
             } elseif (is_array($value)) {
-                $redacted[$key] = self::redactContext($value);
+                $redacted[$key] = self::redactContext($value, $depth + 1);
+            } elseif (is_object($value)) {
+                $redacted[$key] = self::redactObject($value, $depth + 1);
             } else {
                 $redacted[$key] = $value;
             }
         }
 
         return $redacted;
+    }
+
+    private static function redactObject(object $object, int $depth): mixed
+    {
+        if ($depth > 10) {
+            return '***NESTING_LIMIT***';
+        }
+
+        $array = get_object_vars($object);
+        if ($array === false) {
+            return $object;
+        }
+
+        $redacted = [];
+        foreach ($array as $key => $value) {
+            if (self::isSensitiveKey((string) $key)) {
+                $redacted[$key] = '***REDACTED***';
+            } elseif (is_string($value)) {
+                $redacted[$key] = self::redactMessage($value);
+            } elseif (is_array($value)) {
+                $redacted[$key] = self::redactContext($value, $depth + 1);
+            } elseif (is_object($value)) {
+                $redacted[$key] = self::redactObject($value, $depth + 1);
+            } else {
+                $redacted[$key] = $value;
+            }
+        }
+
+        return (object) $redacted;
     }
 
     public static function readLogs(int $lines = 100): array
