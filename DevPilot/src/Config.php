@@ -30,17 +30,18 @@ final class Config
     public static function ensureDirectories(): void
     {
         $dirs = [
-            self::getRoot(),
             dirname(self::getRegistryPath()),
-            self::getRoot() . '/adapters',
-            self::getRoot() . '/adapters/php',
-            self::getRoot() . '/diagnostics',
-            self::getRoot() . '/tests',
+            self::getRoot() . '/logs',
         ];
 
         foreach ($dirs as $dir) {
             if (!is_dir($dir)) {
-                mkdir($dir, 0755, true);
+                if (!@mkdir($dir, 0700, true) && !is_dir($dir)) {
+                    throw new \RuntimeException('DevPilot runtime directory could not be created');
+                }
+            }
+            if (!is_writable($dir)) {
+                throw new \RuntimeException('DevPilot runtime directory is not writable');
             }
         }
     }

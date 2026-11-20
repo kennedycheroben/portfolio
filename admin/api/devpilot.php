@@ -16,6 +16,10 @@ use DevPilot\Registry;
 
 // Verify admin authentication
 requireAdmin();
+require_once __DIR__ . '/../includes/devpilot-bootstrap.php';
+if (devpilot_initialize_runtime() !== null) {
+    devpilot_unavailable(true);
+}
 
 // Verify CSRF for state-changing operations
 if ($_SERVER['REQUEST_METHOD'] !== 'GET') {

@@ -1,11 +1,16 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__ . '/../includes/bootstrap.php';
-requireAdmin();
 require_once __DIR__ . '/../includes/auth.php';
+requireAdmin();
+require_once __DIR__ . '/includes/devpilot-bootstrap.php';
+if (devpilot_initialize_runtime() !== null) {
+    devpilot_unavailable();
+}
 
 $adminPageTitle = 'DevPilot';
 $adminActiveNav = 'devpilot';
+$unreadCount = 0;
 require __DIR__ . '/includes/admin-head.php';
 require __DIR__ . '/includes/admin-sidebar.php';
 ?>
@@ -16,7 +21,7 @@ require __DIR__ . '/includes/admin-sidebar.php';
   </div>
 
   <?php
-    $registry = new \DevPilot\Registry();
+    $registry = \DevPilot\Registry::getInstance();
     $devices = \DevPilot\Api\DeviceAuth::listRegisteredDevices();
     $operations = new \DevPilot\Api\OperationQueue();
     $ops = $operations->list();

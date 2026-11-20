@@ -1,7 +1,12 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__ . '/../includes/bootstrap.php';
+require_once __DIR__ . '/../includes/auth.php';
 requireAdmin();
+require_once __DIR__ . '/includes/devpilot-bootstrap.php';
+if (devpilot_initialize_runtime() !== null) {
+    devpilot_unavailable();
+}
 
 $id = (int) ($_GET['id'] ?? 0);
 if ($id <= 0) {
@@ -9,7 +14,7 @@ if ($id <= 0) {
     exit('Invalid project ID');
 }
 
-$registry = new \DevPilot\Registry();
+$registry = \DevPilot\Registry::getInstance();
 $project = $registry->get($id);
 if ($project === null) {
     http_response_code(404);
@@ -22,6 +27,7 @@ $projectOps = $operations->list(null, null, $id);
 
 $adminPageTitle = 'Project: ' . $project->name;
 $adminActiveNav = 'devpilot';
+$unreadCount = 0;
 require __DIR__ . '/includes/admin-head.php';
 require __DIR__ . '/includes/admin-sidebar.php';
 ?>
@@ -115,10 +121,10 @@ require __DIR__ . '/includes/admin-sidebar.php';
           <strong>Actions</strong>
         </div>
         <div class="card-body">
-          <form action="devpilot-operations.php" method="get" style="display: none;" id="actionForm">
+          <form action="devpilot-operations.php" method="post" style="display: none;" id="actionForm">
             <input type="hidden" name="projectId" value="<?= $project->id ?>">
             <input type="hidden" name="operation" id="operationInput">
-            <input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
+            <?= csrf_field() ?>
           </form>
 
           <button type="button" onclick="queueAction('check_health')" class="btn-outline-accent w-100 mb-2">

@@ -30,7 +30,12 @@ final class Logger
     {
         $logDir = $root . '/logs';
         if (!is_dir($logDir)) {
-            mkdir($logDir, 0755, true);
+            if (!@mkdir($logDir, 0700, true) && !is_dir($logDir)) {
+                throw new \RuntimeException('DevPilot log directory could not be created');
+            }
+        }
+        if (!is_writable($logDir)) {
+            throw new \RuntimeException('DevPilot log directory is not writable');
         }
         self::$logFile = $logDir . '/operations.log';
     }

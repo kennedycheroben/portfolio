@@ -14,18 +14,15 @@ final class OperationQueue
     private string $filePath;
     private $lockHandle = null;
 
-    public function __construct()
+    public function __construct(?string $filePath = null)
     {
-        $this->filePath = Config::getRoot() . '/registry/' . self::OPERATIONS_FILE;
+        $this->filePath = $filePath ?? Config::getRoot() . '/registry/' . self::OPERATIONS_FILE;
         $this->load();
     }
 
     public function queue(int $projectId, string $operation, array $parameters = [], int $adminId = 0): int
     {
-        $this->acquireLock();
-
-        try {
-            $this->load();
+        return $this->withLock(function () use ($projectId, $operation, $parameters, $adminId): int {
             $id = $this->nextId++;
 
             $this->operations[] = [
@@ -48,9 +45,7 @@ final class OperationQueue
             Logger::info('Operation queued', ['operationId' => $id, 'projectId' => $projectId, 'operation' => $operation]);
 
             return $id;
-        } finally {
-            $this->releaseLock();
-        }
+        });
     }
 
     public function get(int $id): ?array
@@ -95,103 +90,158 @@ final class OperationQueue
 
     public function assignToDevice(string $deviceId, int $operationId): bool
     {
-        foreach ($this->operations as &$op) {
-            if ($op['id'] === $operationId && $op['status'] === 'pending') {
-                $op['deviceId'] = $deviceId;
-                $op['startedAt'] = date('c');
-                $op['status'] = 'processing';
-                $this->write();
-                return true;
+        return $this->withLock(function () use ($deviceId, $operationId): bool {
+            foreach ($this->operations as &$op) {
+                if ($op['id'] === $operationId && $op['status'] === 'pending') {
+                    $op['deviceId'] = $deviceId;
+                    $op['startedAt'] = date('c');
+                    $op['status'] = 'processing';
+                    unset($op);
+                    $this->write();
+                    return true;
+                }
             }
-        }
-        return false;
+            unset($op);
+            return false;
+        });
     }
 
     public function complete(int $id, array $result): bool
     {
-        foreach ($this->operations as &$op) {
-            if ($op['id'] === $id) {
-                $op['status'] = 'completed';
-                $op['completedAt'] = date('c');
-                $op['result'] = $result;
-                $this->write();
-                return true;
+        return $this->withLock(function () use ($id, $result): bool {
+            foreach ($this->operations as &$op) {
+                if ($op['id'] === $id) {
+                    $op['status'] = 'completed';
+                    $op['completedAt'] = date('c');
+                    $op['result'] = $result;
+                    unset($op);
+                    $this->write();
+                    return true;
+                }
             }
-        }
-        return false;
+            unset($op);
+            return false;
+        });
     }
 
     public function fail(int $id, string $error): bool
     {
-        foreach ($this->operations as &$op) {
-            if ($op['id'] === $id) {
-                $op['status'] = 'failed';
-                $op['error'] = $error;
-                $this->write();
-                return true;
+        return $this->withLock(function () use ($id, $error): bool {
+            foreach ($this->operations as &$op) {
+                if ($op['id'] === $id) {
+                    $op['status'] = 'failed';
+                    $op['error'] = $error;
+                    unset($op);
+                    $this->write();
+                    return true;
+                }
             }
-        }
-        return false;
+            unset($op);
+            return false;
+        });
     }
 
     public function cancel(int $id): bool
     {
-        foreach ($this->operations as &$op) {
-            if ($op['id'] === $id && in_array($op['status'], ['pending', 'processing'], true)) {
-                $op['status'] = 'cancelled';
-                $op['error'] = 'CANCELLED';
-                $this->write();
-                return true;
+        return $this->withLock(function () use ($id): bool {
+            foreach ($this->operations as &$op) {
+                if ($op['id'] === $id && in_array($op['status'], ['pending', 'processing'], true)) {
+                    $op['status'] = 'cancelled';
+                    $op['error'] = 'CANCELLED';
+                    unset($op);
+                    $this->write();
+                    return true;
+                }
             }
-        }
-        return false;
+            unset($op);
+            return false;
+        });
     }
 
     public function cleanExpired(int $maxAgeSeconds = 86400): int
     {
-        $cutoff = time() - $maxAgeSeconds;
-        $initialCount = count($this->operations);
+        return $this->withLock(function () use ($maxAgeSeconds): int {
+            $cutoff = time() - $maxAgeSeconds;
+            $initialCount = count($this->operations);
 
-        $this->operations = array_filter($this->operations, function($op) use ($cutoff) {
-            $completedAt = strtotime($op['completedAt'] ?? '');
-            $approvedAt = strtotime($op['approvedAt'] ?? '');
+            $this->operations = array_values(array_filter($this->operations, function($op) use ($cutoff) {
+                $completedAt = strtotime($op['completedAt'] ?? '');
+                $approvedAt = strtotime($op['approvedAt'] ?? '');
 
-            return ($completedAt === false || $completedAt > $cutoff)
-                || ($approvedAt !== false && $approvedAt > $cutoff);
+                return ($completedAt === false || $completedAt > $cutoff)
+                    || ($approvedAt !== false && $approvedAt > $cutoff);
+            }));
+
+            $removedCount = $initialCount - count($this->operations);
+            if ($removedCount > 0) {
+                $this->write();
+            }
+
+            return $removedCount;
         });
+    }
 
-        if (count($this->operations) < $initialCount) {
-            $this->write();
+    private function withLock(callable $operation): mixed
+    {
+        $this->acquireLock();
+        try {
+            $this->load();
+            return $operation();
+        } finally {
+            $this->releaseLock();
         }
-
-        return $initialCount - count($this->operations);
     }
 
     private function load(): void
     {
-        if (!is_readable($this->filePath)) {
+        clearstatcache(true, $this->filePath);
+        if (!file_exists($this->filePath)) {
             $this->operations = [];
             $this->nextId = 1;
             return;
         }
 
-        $content = file_get_contents($this->filePath);
+        if (!is_file($this->filePath) || !is_readable($this->filePath)) {
+            throw new \RuntimeException('Operation queue file is not readable');
+        }
+
+        $content = @file_get_contents($this->filePath);
         if ($content === false) {
-            $this->operations = [];
-            $this->nextId = 1;
-            return;
+            throw new \RuntimeException('Operation queue file could not be read');
         }
 
-        $data = json_decode($content, true);
-        if (!is_array($data)) {
-            $this->operations = [];
-            $this->nextId = 1;
-            return;
+        try {
+            $document = json_decode($content, flags: JSON_THROW_ON_ERROR);
+        } catch (\JsonException $error) {
+            throw new \RuntimeException('Operation queue contains invalid JSON data', 0, $error);
         }
 
-        $this->operations = $data['operations'] ?? [];
+        if (!is_object($document)
+            || !property_exists($document, 'operations')
+            || !is_array($document->operations)
+            || (property_exists($document, 'next_id') && (!is_int($document->next_id) || $document->next_id < 1))) {
+            throw new \RuntimeException('Operation queue contains invalid JSON data');
+        }
+
+        foreach ($document->operations as $op) {
+            if (!is_object($op)
+                || !isset($op->id, $op->projectId, $op->operation, $op->status, $op->parameters)
+                || !is_int($op->id)
+                || $op->id < 1
+                || !is_int($op->projectId)
+                || !is_string($op->operation)
+                || $op->operation === ''
+                || !is_string($op->status)
+                || (!is_array($op->parameters) && !is_object($op->parameters))) {
+                throw new \RuntimeException('Operation queue contains an invalid operation record');
+            }
+        }
+
+        $data = json_decode($content, true, 512, JSON_THROW_ON_ERROR);
+        $this->operations = $data['operations'];
+        $this->nextId = max(1, $data['next_id'] ?? 1);
         foreach ($this->operations as $op) {
-            if (isset($op['id']) && $op['id'] >= $this->nextId) {
+            if ($op['id'] >= $this->nextId) {
                 $this->nextId = $op['id'] + 1;
             }
         }
@@ -199,8 +249,17 @@ final class OperationQueue
 
     private function acquireLock(): void
     {
+        if (is_resource($this->lockHandle)) {
+            throw new \LogicException('Operation queue lock is already held by this instance');
+        }
+
+        $dir = dirname($this->filePath);
+        if (!is_dir($dir) && !@mkdir($dir, 0700, true) && !is_dir($dir)) {
+            throw new \RuntimeException('Failed to create operations directory');
+        }
+
         $lockPath = $this->filePath . '.lock';
-        $handle = fopen($lockPath, 'w');
+        $handle = fopen($lockPath, 'c');
         if ($handle === false) {
             throw new \RuntimeException('Failed to acquire operation queue lock');
         }
@@ -211,19 +270,28 @@ final class OperationQueue
         }
 
         $this->lockHandle = $handle;
+        @chmod($lockPath, 0600);
     }
 
     private function releaseLock(): void
     {
         if (isset($this->lockHandle) && is_resource($this->lockHandle)) {
-            flock($this->lockHandle, LOCK_UN);
-            fclose($this->lockHandle);
+            $handle = $this->lockHandle;
             $this->lockHandle = null;
+            try {
+                flock($handle, LOCK_UN);
+            } finally {
+                fclose($handle);
+            }
         }
     }
 
     private function write(): void
     {
+        if (!is_resource($this->lockHandle)) {
+            throw new \LogicException('Operation queue writes require the queue lock');
+        }
+
         $dir = dirname($this->filePath);
         if (!is_dir($dir)) {
             if (!mkdir($dir, 0700, true)) {
@@ -231,23 +299,13 @@ final class OperationQueue
             }
         }
 
-        $lockPath = dirname($this->filePath) . '/' . basename($this->filePath) . '.lock';
-
-        $handle = fopen($lockPath, 'w');
-        if ($handle === false) {
-            throw new \RuntimeException('Failed to acquire write lock');
-        }
-
-        if (!flock($handle, LOCK_EX)) {
-            fclose($handle);
-            throw new \RuntimeException('Failed to acquire exclusive lock');
-        }
-
+        $tempFile = null;
         try {
             $data = [
                 'exported_at' => date('c'),
                 'version' => '1.0',
                 'count' => count($this->operations),
+                'next_id' => $this->nextId,
                 'operations' => array_values($this->operations),
             ];
 
@@ -256,19 +314,26 @@ final class OperationQueue
                 throw new \RuntimeException('Failed to encode operations data');
             }
 
-            $tempFile = $this->filePath . '.tmp.' . uniqid('', true);
-            if (file_put_contents($tempFile, $json) === false) {
+            $tempFile = tempnam($dir, '.operations-');
+            if ($tempFile === false) {
+                throw new \RuntimeException('Failed to create temporary operations file');
+            }
+            if (realpath(dirname($tempFile)) !== realpath($dir)) {
+                throw new \RuntimeException('Temporary operations file was created outside the registry directory');
+            }
+            if (file_put_contents($tempFile, $json, LOCK_EX) !== strlen($json)) {
                 throw new \RuntimeException('Failed to write operations file');
             }
 
             chmod($tempFile, 0600);
             if (!rename($tempFile, $this->filePath)) {
-                unlink($tempFile);
                 throw new \RuntimeException('Failed to atomically replace operations file');
             }
+            $tempFile = null;
         } finally {
-            flock($handle, LOCK_UN);
-            fclose($handle);
+            if ($tempFile !== null && is_file($tempFile)) {
+                @unlink($tempFile);
+            }
         }
     }
 

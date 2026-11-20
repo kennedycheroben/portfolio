@@ -5,6 +5,10 @@ DirectoryIndex index.php
   Require all denied
 </FilesMatch>
 
+<Files "devpilot_devices.json">
+  Require all denied
+</Files>
+
 <IfModule mod_headers.c>
   Header always unset X-Powered-By
   Header always set X-Content-Type-Options "nosniff"
@@ -45,4 +49,4 @@ DirectoryIndex index.php
   RewriteRule ^ 404.php [END]
 </IfModule>
 
-ErrorDocument 500 default
+ErrorDocument 500 "The server encountered an internal error."
