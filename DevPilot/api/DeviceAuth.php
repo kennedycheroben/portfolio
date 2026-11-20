@@ -239,8 +239,14 @@ final class DeviceAuth
 
     private static function getDevicesFilePath(): string
     {
-        $configDir = dirname(Config::getRoot());
-        return $configDir . '/' . self::DEVICES_FILE;
+        $runtimePath = Config::getRoot() . '/registry/' . self::DEVICES_FILE;
+        $legacyPath = dirname(Config::getRoot()) . '/' . self::DEVICES_FILE;
+        if (!is_file($runtimePath) && is_readable($legacyPath) && is_writable(dirname($runtimePath))) {
+            if (@copy($legacyPath, $runtimePath)) {
+                @chmod($runtimePath, 0600);
+            }
+        }
+        return $runtimePath;
     }
 
     private static function saveDevices(array $devices): void

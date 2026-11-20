@@ -1,10 +1,15 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__ . '/../includes/bootstrap.php';
+require_once __DIR__ . '/../includes/auth.php';
 requireAdmin();
+require_once __DIR__ . '/includes/devpilot-bootstrap.php';
+if (devpilot_initialize_runtime() !== null) {
+    devpilot_unavailable();
+}
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    header('Location: devpilot-devices.php');
+    header('Location: devpilot.php');
     exit;
 }
 

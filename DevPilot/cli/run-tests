@@ -7,7 +7,11 @@ declare(strict_types=1);
  * Explicit assertion helpers - does not rely on PHP assert()
  */
 
-require_once dirname(__DIR__) . '/vendor/autoload.php';
+require_once dirname(__DIR__) . '/autoload.php';
+require_once dirname(__DIR__) . '/tests/TestCase.php';
+require_once dirname(__DIR__) . '/tests/DiscoveryTest.php';
+require_once dirname(__DIR__) . '/tests/AdapterCompatibilityTest.php';
+require_once dirname(__DIR__, 2) . '/admin/includes/devpilot-bootstrap.php';
 
 use DevPilot\Config;
 use DevPilot\Discovery;
@@ -208,6 +212,73 @@ $results = test('rejects empty path', function() {
     } catch (OutOfBoundsException $e) {
         // Expected
     }
+}, $testResults);
+
+echo "\n2b. Web Bootstrap and Security Regression Tests\n";
+$results = test('runtime autoloader resolves all application namespaces without Composer', function() {
+    foreach ([
+        \DevPilot\Config::class,
+        \DevPilot\Registry::class,
+        \DevPilot\Discovery::class,
+        \DevPilot\Api\DeviceAuth::class,
+        \DevPilot\Api\OperationQueue::class,
+        \DevPilot\Adapters\AdapterContract::class,
+        \DevPilot\Adapters\Php\VanillaPhpAdapter::class,
+    ] as $class) {
+        assertTrue("autoloads {$class}", class_exists($class) || interface_exists($class));
+    }
+}, $testResults);
+
+$results = test('configured cPanel paths resolve inside DevPilot', function() {
+    $root = realpath(Config::getRoot());
+    $registry = Config::getRegistryPath();
+    assertEquals('DevPilot root resolves from source location', realpath(dirname(__DIR__)), $root);
+    assertTrue('registry path is under DevPilot', str_starts_with($registry, $root . DIRECTORY_SEPARATOR));
+    assertEquals('registry path has expected filename', 'projects.json', basename($registry));
+}, $testResults);
+
+$results = test('missing runtime dependencies return a controlled initialization status', function() {
+    $missingRoot = sys_get_temp_dir() . '/devpilot-missing-' . uniqid();
+    assertEquals('missing runtime dependency status', 'required_files_missing', devpilot_initialize_runtime($missingRoot));
+}, $testResults);
+
+$results = test('all DevPilot admin entry points authenticate before runtime initialization', function() {
+    $pages = [
+        dirname(__DIR__, 2) . '/admin/devpilot.php',
+        dirname(__DIR__, 2) . '/admin/devpilot-project.php',
+        dirname(__DIR__, 2) . '/admin/devpilot-projects.php',
+        dirname(__DIR__, 2) . '/admin/devpilot-operations.php',
+        dirname(__DIR__, 2) . '/admin/devpilot-device-delete.php',
+        dirname(__DIR__, 2) . '/admin/api/devpilot.php',
+    ];
+    foreach ($pages as $page) {
+        $source = file_get_contents($page);
+        assertTrue('entry point exists: ' . basename($page), is_string($source));
+        assertTrue('entry point loads auth: ' . basename($page), str_contains($source, "includes/auth.php"));
+        assertTrue('entry point requires admin: ' . basename($page), str_contains($source, 'requireAdmin();'));
+        assertTrue('entry point has controlled dependency diagnostic: ' . basename($page), str_contains($source, 'devpilot_unavailable'));
+        $authPosition = strpos($source, 'requireAdmin();');
+        $runtimePosition = strpos($source, 'devpilot_initialize_runtime()');
+        assertTrue('authentication precedes runtime initialization: ' . basename($page), $authPosition !== false && $runtimePosition !== false && $authPosition < $runtimePosition);
+    }
+}, $testResults);
+
+$results = test('state changing admin actions retain CSRF validation and POST semantics', function() {
+    $root = dirname(__DIR__, 2) . '/admin/';
+    $deletePage = file_get_contents($root . 'devpilot-device-delete.php');
+    $operationsPage = file_get_contents($root . 'devpilot-operations.php');
+    $projectPage = file_get_contents($root . 'devpilot-project.php');
+    assertTrue('device revoke validates CSRF', str_contains($deletePage, 'verify_csrf();'));
+    assertTrue('operation queue validates CSRF', str_contains($operationsPage, 'verify_csrf();'));
+    assertTrue('project action form uses POST', str_contains($projectPage, 'method="post"'));
+    assertTrue('API validates CSRF', str_contains(file_get_contents($root . 'api/devpilot.php'), 'verify_csrf();'));
+}, $testResults);
+
+$results = test('DevPilot runtime files are denied direct HTTP access', function() {
+    $root = dirname(__DIR__, 2);
+    assertTrue('DevPilot directory denies direct access', str_contains(file_get_contents(dirname(__DIR__) . '/.htaccess'), 'Require all denied'));
+    assertTrue('legacy registry directory denies direct access', str_contains(file_get_contents($root . '/registry/.htaccess'), 'Require all denied'));
+    assertTrue('legacy device file denied by portfolio rules', str_contains(file_get_contents($root . '/.htaccess'), 'devpilot_devices.json'));
 }, $testResults);
 
 echo "\n3. Project Tests\n";
@@ -531,8 +602,8 @@ $results = test('concurrent registry access does not lose updates', function() {
     $initRegistry = new \DevPilot\Registry($registryPath);
     $initRegistry->add(new \DevPilot\Project(id: 0, name: 'Init', path: '/tmp/init'));
 
-    // Use absolute path to vendor autoload
-    $autoloadPath = realpath(__DIR__ . '/../vendor/autoload.php');
+    // Use the shipped, dependency-free runtime autoloader.
+    $autoloadPath = realpath(__DIR__ . '/../autoload.php');
 
     $script = '
         require "' . $autoloadPath . '";
