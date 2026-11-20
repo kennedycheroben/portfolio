@@ -210,19 +210,39 @@ final class OperationQueue
             throw new \RuntimeException('Operation queue file could not be read');
         }
 
-        $data = json_decode($content, true);
-        if (!is_array($data) || (array_key_exists('operations', $data) && !is_array($data['operations']))) {
+        try {
+            $document = json_decode($content, flags: JSON_THROW_ON_ERROR);
+        } catch (\JsonException $error) {
+            throw new \RuntimeException('Operation queue contains invalid JSON data', 0, $error);
+        }
+
+        if (!is_object($document)
+            || !property_exists($document, 'operations')
+            || !is_array($document->operations)
+            || (property_exists($document, 'next_id') && (!is_int($document->next_id) || $document->next_id < 1))) {
             throw new \RuntimeException('Operation queue contains invalid JSON data');
         }
 
-        $this->operations = $data['operations'] ?? [];
-        $this->nextId = max(1, (int) ($data['next_id'] ?? 1));
-        foreach ($this->operations as $op) {
-            if (!is_array($op)) {
+        foreach ($document->operations as $op) {
+            if (!is_object($op)
+                || !isset($op->id, $op->projectId, $op->operation, $op->status, $op->parameters)
+                || !is_int($op->id)
+                || $op->id < 1
+                || !is_int($op->projectId)
+                || !is_string($op->operation)
+                || $op->operation === ''
+                || !is_string($op->status)
+                || (!is_array($op->parameters) && !is_object($op->parameters))) {
                 throw new \RuntimeException('Operation queue contains an invalid operation record');
             }
-            if (isset($op['id']) && is_numeric($op['id']) && (int) $op['id'] >= $this->nextId) {
-                $this->nextId = (int) $op['id'] + 1;
+        }
+
+        $data = json_decode($content, true, 512, JSON_THROW_ON_ERROR);
+        $this->operations = $data['operations'];
+        $this->nextId = max(1, $data['next_id'] ?? 1);
+        foreach ($this->operations as $op) {
+            if ($op['id'] >= $this->nextId) {
+                $this->nextId = $op['id'] + 1;
             }
         }
     }

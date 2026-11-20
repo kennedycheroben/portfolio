@@ -306,6 +306,33 @@ $results = test('operation queue serializes sequential mutations, preserves reco
     assertEquals('ids are not reused after cleanup and restart', 11, $afterCleanupId);
 }, $testResults);
 
+$results = test('operation queue rejects invalid documents without changing source files', function() use (&$tempDir) {
+    $queueDir = $tempDir . '/operation-queue-invalid';
+    mkdir($queueDir, 0700, true);
+    $invalidDocuments = [
+        'missing_operations' => '{"next_id":20}',
+        'malformed_json' => '{"operations":[',
+        'invalid_record_null' => '{"operations":[null]}',
+        'invalid_record_object' => '{"operations":[{}]}',
+        'operations_not_array' => '{"operations":{}}',
+        'top_level_array' => '[]',
+    ];
+
+    foreach ($invalidDocuments as $case => $originalContent) {
+        $queuePath = $queueDir . '/' . $case . '.json';
+        file_put_contents($queuePath, $originalContent);
+        $before = file_get_contents($queuePath);
+        $rejected = false;
+        try {
+            new \DevPilot\Api\OperationQueue($queuePath);
+        } catch (RuntimeException) {
+            $rejected = true;
+        }
+        assertTrue('invalid queue failure is a RuntimeException: ' . $case, $rejected);
+        assertEquals('invalid queue contents remain unchanged: ' . $case, $before, file_get_contents($queuePath));
+    }
+}, $testResults);
+
 $results = test('operation queue assigns unique ids under concurrent workers', function() use (&$tempDir) {
     $queueDir = $tempDir . '/operation-queue-concurrent';
     $logsDir = $tempDir . '/operation-queue-worker-logs';
