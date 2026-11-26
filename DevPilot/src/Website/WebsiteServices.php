@@ -31,4 +31,9 @@ final class WebsiteServices
     {
         return new \DevPilot\Connector\ProjectConnectorService(new \DevPilot\Connector\PdoConnectorStore($pdo));
     }
+
+    public static function connectedProjects(PDO $pdo): \DevPilot\Connector\ConnectedProjectStore
+    {
+        return new \DevPilot\Connector\ConnectedProjectStore($pdo, new CredentialVault());
+    }
 }

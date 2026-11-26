@@ -13,4 +13,6 @@ interface ConnectorStore
     public function touchConnection(string $connectionId, int $now): void;
     public function revokeConnection(string $connectionId, int $now): void;
     public function rotateConnection(string $connectionId, array $connection, int $now): void;
+    public function pairingAllowed(string $key, int $now): bool;
+    public function recordPairingFailure(string $key, int $now): void;
 }

@@ -33,7 +33,11 @@ final class VaultKeyring
         }
 
         $configuredPath = getenv('DEVPILOT_VAULT_KEYRING_FILE');
-        if (!is_string($configuredPath) || $configuredPath === '' || !str_starts_with($configuredPath, '/')) {
+        $isWindows = DIRECTORY_SEPARATOR === '\\';
+        $isAbsolute = is_string($configuredPath) && ($isWindows
+            ? preg_match('/^(?:[A-Za-z]:[\\\\\/]|\\\\\\\\)/', $configuredPath) === 1
+            : str_starts_with($configuredPath, '/'));
+        if (!is_string($configuredPath) || $configuredPath === '' || !$isAbsolute) {
             throw new RuntimeException('Secure credential storage is unavailable.');
         }
         if (is_link($configuredPath)) {
@@ -45,12 +49,14 @@ final class VaultKeyring
         }
 
         $documentRoot = realpath((string) ($_SERVER['DOCUMENT_ROOT'] ?? ''));
-        if ($documentRoot !== false && ($realPath === $documentRoot || str_starts_with($realPath, rtrim($documentRoot, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR))) {
+        $normalizedReal = $isWindows ? strtolower(str_replace('\\', '/', $realPath)) : $realPath;
+        $normalizedRoot = $isWindows && $documentRoot !== false ? strtolower(str_replace('\\', '/', $documentRoot)) : $documentRoot;
+        if ($normalizedRoot !== false && ($normalizedReal === $normalizedRoot || str_starts_with($normalizedReal, rtrim($normalizedRoot, '/') . '/'))) {
             throw new RuntimeException('Secure credential storage is unavailable.');
         }
 
         $permissions = fileperms($realPath);
-        if ($permissions === false || (($permissions & 0077) !== 0)) {
+        if ($permissions === false || (!$isWindows && (($permissions & 0077) !== 0))) {
             throw new RuntimeException('Secure credential storage is unavailable.');
         }
 
