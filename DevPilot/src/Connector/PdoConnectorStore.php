@@ -46,15 +46,19 @@ final class PdoConnectorStore implements ConnectorStore
 
     public function saveConnection(array $connection): void
     {
-        $started = $this->beginWrite();
+        $owner = (int) ($connection['owner_id'] ?? 0);
+        $projectLock = $this->acquireProjectLock((string) $connection['project_id']);
+        $started = false;
         try {
-            $owner = (int) ($connection['owner_id'] ?? 0);
-            $lockSql = 'SELECT id FROM devpilot_connector_connections WHERE owner_id=? AND project_id=?' . ($this->mysql ? ' FOR UPDATE' : '');
+            $started = $this->beginWrite();
+            $indexHint = $this->mysql ? ' FORCE INDEX (idx_connector_owner_project)' : '';
+            $lockSql = 'SELECT id FROM devpilot_connector_connections' . $indexHint . ' WHERE owner_id=? AND project_id=?' . ($this->mysql ? ' FOR UPDATE' : '');
             $lock = $this->pdo->prepare($lockSql);
             $lock->execute([$owner,$connection['project_id']]);
             $lock->fetchAll(PDO::FETCH_COLUMN);
             $revokeTime = $this->mysql ? 'FROM_UNIXTIME(?)' : '?';
-            $revoke = $this->pdo->prepare("UPDATE devpilot_connector_connections SET status='revoked', revoked_at=$revokeTime WHERE project_id=? AND owner_id=? AND status='active'");
+            $revokeIndexHint = $this->mysql ? ' FORCE INDEX (idx_connector_owner_project)' : '';
+            $revoke = $this->pdo->prepare("UPDATE devpilot_connector_connections$revokeIndexHint SET status='revoked', revoked_at=$revokeTime WHERE project_id=? AND owner_id=? AND status='active'");
             $revoke->execute([$connection['connected_at'],$connection['project_id'],$owner]);
             $stamp = $this->mysql ? 'FROM_UNIXTIME(?)' : '?';
             $insert = $this->pdo->prepare("INSERT INTO devpilot_connector_connections (connection_id, project_id, project_name, origin, scopes_json, token_hash, status, connected_at, last_seen_at, expires_at, owner_id) VALUES (?, ?, ?, ?, ?, ?, ?, $stamp, $stamp, $stamp, ?)");
@@ -63,6 +67,8 @@ final class PdoConnectorStore implements ConnectorStore
         } catch (\Throwable $exception) {
             $this->rollbackWrite($started);
             throw $exception;
+        } finally {
+            $this->releaseProjectLock($projectLock);
         }
     }
 
@@ -108,9 +114,21 @@ final class PdoConnectorStore implements ConnectorStore
 
     public function rotateConnection(string $connectionId, array $connection, int $now): void
     {
-        $started = $this->beginWrite();
-        try { $this->revokeConnection($connectionId,$now); $this->saveConnection($connection); $this->commitWrite($started); }
+        $projectLock = $this->acquireProjectLock((string) $connection['project_id']);
+        $started = false;
+        try {
+            $started = $this->beginWrite();
+            // Consume the source credential under the same lock as the replacement. A concurrent
+            // rotation that already consumed it must fail closed instead of minting an orphan token.
+            $time = $this->mysql ? 'FROM_UNIXTIME(?)' : '?';
+            $consume = $this->pdo->prepare("UPDATE devpilot_connector_connections SET status='revoked', revoked_at=$time WHERE connection_id=? AND status='active'");
+            $consume->execute([$now,$connectionId]);
+            if ($consume->rowCount() !== 1) throw new \RuntimeException('Connector rotation source is no longer active.');
+            $this->saveConnection($connection);
+            $this->commitWrite($started);
+        }
         catch (\Throwable $exception) { $this->rollbackWrite($started); throw $exception; }
+        finally { $this->releaseProjectLock($projectLock); }
     }
 
     public function pairingAllowed(string $ipHash, int $now): bool
@@ -150,5 +168,23 @@ final class PdoConnectorStore implements ConnectorStore
         if (!$started || !$this->pdo->inTransaction()) return;
         if (!$this->mysql) $this->pdo->exec('ROLLBACK');
         else $this->pdo->rollBack();
+    }
+
+    private function acquireProjectLock(string $projectId): ?string
+    {
+        if (!$this->mysql) return null;
+        // Project-wide serialization also avoids gap-lock deadlocks on the shared (project_id,status) index.
+        $lockName = 'dpc_' . substr(hash('sha256', $projectId), 0, 60);
+        $stmt = $this->pdo->prepare('SELECT GET_LOCK(?, 10)');
+        $stmt->execute([$lockName]);
+        if ((int) $stmt->fetchColumn() !== 1) throw new \RuntimeException('Could not serialize connector updates for this owner and project.');
+        return $lockName;
+    }
+
+    private function releaseProjectLock(?string $lockName): void
+    {
+        if ($lockName === null) return;
+        $stmt = $this->pdo->prepare('SELECT RELEASE_LOCK(?)');
+        $stmt->execute([$lockName]);
     }
 }

@@ -32,8 +32,9 @@ For staging, deploy the Hub and customer project as separate HTTPS applications 
 
 - Configure the Hub instance's `APP_URL` and `DEVPILOT_HUB_URL` to the Hub's canonical HTTPS origin.
 - Configure the customer instance's `APP_URL` to its own canonical origin and `DEVPILOT_HUB_URL` to the independently hosted Hub origin. These values must differ.
-- On the customer database, apply `migrations/004_devpilot_connector.sql` followed by `migrations/005_devpilot_project_owner.sql`.
+- On the customer database, apply `migrations/004_devpilot_connector.sql` followed by `migrations/005_devpilot_project_owner.sql`. Run each migration once in order. Migration 005 invalidates any legacy unowned pairing codes and active tokens; they cannot be safely assigned to an administrator and require re-pairing.
 - On the Hub database, apply `migrations/006_devpilot_hub_registry.sql` only, in addition to the Hub application's existing base schema.
+- Back up each database before migration. MariaDB/MySQL DDL auto-commits, so these migrations are ordered one-shot steps rather than one atomic transaction. The customer connector's owner/project index is intentionally non-unique to retain revoked history; connection IDs and token hashes are unique. Owner IDs have no foreign key because customer applications can use different administrator schemas; owner-scoped lookups and connection writes include the owner ID.
 - Configure `DEVPILOT_VAULT_KEYRING_FILE` separately on each instance to an absolute path outside the web root. Its shape is `{"active_version":"v1","keys":{"v1":"<base64-encoded-32-byte-key>"}}`. Keep key material out of the repository and web root.
 - Enable PHP cURL, OpenSSL, PDO MySQL and sodium on both instances. If sodium is unavailable, pairing secrets and Hub tokens cannot be persisted; the connector fails closed.
 - Leave `DEVPILOT_CONNECTOR_SECURITY_VERIFIED` unset. Production connect and refresh remain disabled until a separate review has passed; disconnect remains available.
@@ -46,6 +47,19 @@ The repeatable local integration test creates two independent SQLite databases a
 
 The test requires PHP cURL, OpenSSL and PDO SQLite. It creates temporary databases, keyring, certificate, sessions, and server processes under the system temporary directory, then removes them. It never uses production data.
 
+The MariaDB concurrency test uses a local MariaDB/MySQL instance and requires a test account allowed to create and drop databases. It refuses remote hosts, requires the explicit `DEVPILOT_MARIADB_TEST_ALLOW=1` opt-in, creates two temporary databases named with the `devpilot_test_connector_` prefix, applies the actual project migrations 004/005 and Hub migration 006, and drops only those generated databases on exit. Run it from PowerShell with:
+
+```powershell
+$env:DEVPILOT_MARIADB_TEST_ALLOW='1'
+$env:DEVPILOT_MARIADB_TEST_HOST='127.0.0.1'
+$env:DEVPILOT_MARIADB_TEST_PORT='3306'
+$env:DEVPILOT_MARIADB_TEST_USER='root'
+$env:DEVPILOT_MARIADB_TEST_PASSWORD=''
+& 'C:\xampp\php\php.exe' DevPilot/tests/integration/mariadb-connector-concurrency.php
+```
+
+Use a dedicated local test account where possible; do not point these variables at a production host. Set `DEVPILOT_MARIADB_TEST_ISOLATION=READ-COMMITTED` to exercise that isolation level as well as the default repeatable-read mode.
+
 ## Rollback
 
-Stop connector use before rollback. On the customer project database, apply `migrations/005_devpilot_project_owner.rollback.sql`, then `migrations/004_devpilot_connector.rollback.sql` if removing all project-side connector tables. On the Hub database, apply `migrations/006_devpilot_hub_registry.rollback.sql`. Rollback deletes connector authorization and inspection records.
+Stop connector use before rollback. On the customer project database, apply `migrations/005_devpilot_project_owner.rollback.sql`, then `migrations/004_devpilot_connector.rollback.sql` if removing all project-side connector tables. On the Hub database, apply `migrations/006_devpilot_hub_registry.rollback.sql`. Rollback deletes connector authorization and inspection records. Migration 005's invalidation of legacy ownerless tokens and pairings is intentionally irreversible; affected projects must pair again even if the owner columns are later removed.

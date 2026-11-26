@@ -127,7 +127,7 @@ final class ProjectConnectorTest
         $adminApi = file_get_contents($root . '/admin/api/devpilot-connector.php');
         $dashboard = file_get_contents($root . '/admin/devpilot-websites.php');
         $registry = file_get_contents(__DIR__ . '/../src/Connector/ConnectedProjectStore.php');
-        $client = file_get_contents(__DIR__ . '/../adapters/php/ConnectorClient.php');
+        $client = file_get_contents(__DIR__ . '/../adapters/Php/ConnectorClient.php');
         if (!is_string($adminApi) || !is_string($dashboard) || !is_string($registry) || !is_string($client)) throw new RuntimeException('Connector integration files are missing.');
         $adminGate = strpos($adminApi, 'requireAdmin();');
         $csrfGate = strpos($adminApi, 'verify_csrf();');

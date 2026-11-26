@@ -28,10 +28,8 @@ final class AdapterCompatibilityTest
 
     private function removeDirectory(string $dir): void
     {
-        $files = glob($dir . '/*');
-        foreach ($files as $file) {
-            is_dir($file) ? $this->removeDirectory($file) : unlink($file);
-        }
+        $iterator = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS), \RecursiveIteratorIterator::CHILD_FIRST);
+        foreach ($iterator as $file) $file->isDir() ? rmdir($file->getPathname()) : unlink($file->getPathname());
         rmdir($dir);
     }
 
@@ -68,7 +66,7 @@ final class AdapterCompatibilityTest
         if (!($adapter instanceof VanillaPhpAdapter)) {
             throw new \AssertionError("Adapter is not instance of VanillaPhpAdapter");
         }
-        if ($adapter->getProjectPath() !== $this->testPath) {
+        if ($adapter->getProjectPath() !== realpath($this->testPath)) {
             throw new \AssertionError("Adapter project path mismatch");
         }
     }
@@ -127,6 +125,76 @@ final class AdapterCompatibilityTest
         if ($supports) {
             throw new \AssertionError("Adapter should not support invalid path");
         }
+    }
+
+    public function testVanillaDetectionRejectsFrameworksAndEmptyOrUnreadableCandidates(): void
+    {
+        $framework = $this->testPath . '/framework';
+        mkdir($framework);
+        file_put_contents($framework . '/index.php', '<?php echo "app";');
+        file_put_contents($framework . '/composer.json', json_encode(['require'=>['laravel/framework'=>'^11.0']]));
+        if (VanillaPhpAdapter::supports($framework)) throw new \AssertionError('Laravel project was classified as vanilla PHP.');
+
+        $empty = $this->testPath . '/empty';
+        mkdir($empty);
+        if (VanillaPhpAdapter::supports($empty)) throw new \AssertionError('Empty directory was classified as vanilla PHP.');
+        if (chmod($empty, 0000)) {
+            try {
+                if (!is_readable($empty) && VanillaPhpAdapter::supports($empty)) throw new \AssertionError('Unreadable directory was classified as vanilla PHP.');
+            } finally {
+                chmod($empty, 0700);
+            }
+        }
+
+        $unreadable = $this->testPath . '/unreadable';
+        mkdir($unreadable);
+        mkdir($unreadable . '/index.php');
+        if (VanillaPhpAdapter::supports($unreadable)) throw new \AssertionError('Directory named with a PHP extension was treated as readable PHP source.');
+    }
+
+    public function testPhpCompatibilityMetadataMatchesComposerRequirement(): void
+    {
+        if ((VanillaPhpAdapter::getSupportedStack()['php'] ?? null) !== '>=8.0') throw new \AssertionError('PHP compatibility metadata must match DevPilot composer.json.');
+    }
+
+    public function testHealthCheckHonorsEnabledAndDisabledAllowUrlFopen(): void
+    {
+        mkdir($this->testPath . '/uploads');
+        $enabled = $this->healthCheckInChild('1');
+        $disabled = $this->healthCheckInChild('0');
+        $warning = 'allow_url_fopen may be disabled';
+        if (in_array($warning, $enabled['warnings'], true)) throw new \AssertionError('Enabled allow_url_fopen was reported disabled.');
+        if (!in_array($warning, $disabled['warnings'], true)) throw new \AssertionError('Disabled allow_url_fopen was not reported.');
+    }
+
+    public function testMissingAndSecretEnvironmentFilesAreHandledSafely(): void
+    {
+        mkdir($this->testPath . '/uploads');
+        $adapter = new VanillaPhpAdapter($this->testPath);
+        $missing = $adapter->discover();
+        if (($missing['database'] ?? null) !== null) throw new \AssertionError('Missing env files produced a database detection.');
+
+        $secret = 'DVP_TEST_SECRET_9af3';
+        file_put_contents($this->testPath . '/.env', "DB_HOST=mysql\nDB_PASSWORD={$secret}\n");
+        $discovered = $adapter->discover();
+        $output = json_encode($discovered, JSON_THROW_ON_ERROR);
+        if (($discovered['database'] ?? null) !== 'mysql') throw new \AssertionError('Sanitized database type was not detected.');
+        if (str_contains($output, $secret) || str_contains($output, 'DB_PASSWORD')) throw new \AssertionError('Environment secrets appeared in discovery output.');
+        if (($discovered['environmentFiles'] ?? []) !== ['.env']) throw new \AssertionError('Environment discovery exposed paths or unexpected content.');
+    }
+
+    private function healthCheckInChild(string $setting): array
+    {
+        $code = 'require $argv[1]; $adapter = new \\DevPilot\\Adapters\\Php\\VanillaPhpAdapter($argv[2]); echo json_encode($adapter->checkHealth(), JSON_THROW_ON_ERROR);';
+        $process = proc_open([PHP_BINARY,'-d','allow_url_fopen=' . $setting,'-r',$code,dirname(__DIR__) . '/autoload.php',$this->testPath], [0=>['pipe','r'],1=>['pipe','w'],2=>['pipe','w']], $pipes);
+        if (!is_resource($process)) throw new \RuntimeException('Could not start health-check subprocess.');
+        fclose($pipes[0]);
+        $stdout = stream_get_contents($pipes[1]); fclose($pipes[1]);
+        $stderr = stream_get_contents($pipes[2]); fclose($pipes[2]);
+        $exitCode = proc_close($process);
+        $result = json_decode((string) $stdout, true);
+        if ($exitCode !== 0 || !is_array($result)) throw new \RuntimeException('Health-check subprocess failed: ' . trim((string) $stderr));
+        return $result;
     }
 
     public function testAdapterInterfaceCompatibility(): void
