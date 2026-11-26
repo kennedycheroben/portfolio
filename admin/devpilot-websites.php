@@ -7,7 +7,8 @@ requireAdmin();
 header('Cache-Control: no-store, private');
 header('Pragma: no-cache');
 require_once __DIR__ . '/../includes/db.php';
-require_once __DIR__ . '/../DevPilot/autoload.php';
+require_once __DIR__ . '/../includes/devpilot-loader.php';
+devpilot_register_autoloader();
 
 use DevPilot\Website\WebsiteAuth;
 use DevPilot\Website\WebsiteScopePolicy;

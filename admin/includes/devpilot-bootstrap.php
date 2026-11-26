@@ -1,22 +1,20 @@
 <?php
 declare(strict_types=1);
 
+require_once dirname(__DIR__, 2) . '/includes/devpilot-loader.php';
+
 /**
  * Load DevPilot without requiring Composer's vendor directory on shared hosting.
  * Call only after the portfolio authentication bootstrap and requireAdmin().
  */
-function devpilot_register_autoloader(): void
-{
-    $autoload = dirname(__DIR__, 2) . '/DevPilot/autoload.php';
-    if (!is_file($autoload) || !is_readable($autoload)) {
-        throw new \RuntimeException('DevPilot autoloader unavailable');
-    }
-    require_once $autoload;
-}
-
 function devpilot_initialize_runtime(?string $root = null): ?string
 {
-    $root ??= dirname(__DIR__, 2) . '/DevPilot';
+    try {
+        $root ??= devpilot_root();
+    } catch (\Throwable $error) {
+        error_log('DevPilot root unavailable: ' . get_class($error));
+        return 'required_files_missing';
+    }
     foreach (['src/Config.php', 'src/Registry.php', 'api/DeviceAuth.php', 'api/OperationQueue.php'] as $requiredFile) {
         if (!is_file($root . '/' . $requiredFile) || !is_readable($root . '/' . $requiredFile)) {
             return 'required_files_missing';

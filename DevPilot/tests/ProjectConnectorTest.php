@@ -136,4 +136,38 @@ final class ProjectConnectorTest
         if (!str_contains($registry, 'WHERE owner_id=? AND project_id=?') || !str_contains($registry, '$this->vault->encrypt(')) throw new RuntimeException('DevPilot registry is not owner-scoped or credential-encrypted.');
         if (!str_contains($client, 'inspectForProject') || !str_contains($client, 'revokeForProject')) throw new RuntimeException('PHP client does not bind operations to project identity.');
     }
+
+    public function testProductionDevPilotRootMustBeOutsideDocumentRoot(): void
+    {
+        require_once dirname(__DIR__, 2) . '/includes/devpilot-loader.php';
+        $previousEnvironment = getenv('APP_ENV');
+        $previousRoot = getenv('DEVPILOT_ROOT');
+        $previousDocumentRoot = $_SERVER['DOCUMENT_ROOT'] ?? null;
+        $documentRoot = dirname(__DIR__, 2);
+        $privateRoot = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'devpilot-private-root-' . bin2hex(random_bytes(6));
+        if (!mkdir($privateRoot, 0700, true)) throw new RuntimeException('Could not create private-root test directory.');
+        file_put_contents($privateRoot . DIRECTORY_SEPARATOR . 'autoload.php', "<?php\n");
+
+        try {
+            putenv('APP_ENV=production');
+            putenv('DEVPILOT_ROOT=' . $documentRoot . DIRECTORY_SEPARATOR . 'DevPilot');
+            $_SERVER['DOCUMENT_ROOT'] = $documentRoot;
+            try {
+                devpilot_root();
+                throw new RuntimeException('Production accepted DevPilot files inside the document root.');
+            } catch (RuntimeException $exception) {
+                if ($exception->getMessage() !== 'DEVPILOT_ROOT must be outside the public document root.') throw $exception;
+            }
+
+            putenv('DEVPILOT_ROOT=' . $privateRoot);
+            if (devpilot_root() !== realpath($privateRoot)) throw new RuntimeException('Production did not resolve the external DevPilot root.');
+            devpilot_register_autoloader();
+        } finally {
+            if ($previousEnvironment === false) putenv('APP_ENV'); else putenv('APP_ENV=' . $previousEnvironment);
+            if ($previousRoot === false) putenv('DEVPILOT_ROOT'); else putenv('DEVPILOT_ROOT=' . $previousRoot);
+            if ($previousDocumentRoot === null) unset($_SERVER['DOCUMENT_ROOT']); else $_SERVER['DOCUMENT_ROOT'] = $previousDocumentRoot;
+            if (is_file($privateRoot . DIRECTORY_SEPARATOR . 'autoload.php')) unlink($privateRoot . DIRECTORY_SEPARATOR . 'autoload.php');
+            if (is_dir($privateRoot)) rmdir($privateRoot);
+        }
+    }
 }
