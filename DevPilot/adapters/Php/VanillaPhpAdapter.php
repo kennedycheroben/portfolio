@@ -20,48 +20,48 @@ class VanillaPhpAdapter extends AbstractAdapter
     public static function getSupportedStack(): array
     {
         return [
-            'php' => '>=5.7',
+            'php' => '>=8.0',
         ];
     }
 
     public static function supports(string $path): bool
     {
-        if (!is_dir($path)) {
+        if (!is_dir($path) || !is_readable($path)) {
             return false;
         }
 
-        $files = glob($path . '/*.php');
-        if (empty($files)) {
+        if (self::hasFrameworkFiles($path)) {
             return false;
         }
 
-        $hasNoFramework = !self::hasFrameworkFiles($path);
-
-        return $hasNoFramework || self::hasVanillaPhpStructure($path);
+        foreach (glob(rtrim($path, '/\\') . DIRECTORY_SEPARATOR . '*.php') ?: [] as $file) {
+            $content = self::readPhpSource($file);
+            if ($content !== null && preg_match('/<\?(?:php\b|=)/i', $content) === 1) return true;
+        }
+        return false;
     }
 
     private static function hasFrameworkFiles(string $path): bool
     {
-        return file_exists($path . '/artisan')
-            || file_exists($path . '/bootstrap/app.php')
-            || file_exists($path . '/composer.json');
+        foreach (['artisan','bootstrap/app.php','symfony.lock','bin/console','spark','bin/cake','yii'] as $marker) {
+            if (is_file(rtrim($path, '/\\') . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $marker))) return true;
+        }
+        $manifestPath = rtrim($path, '/\\') . DIRECTORY_SEPARATOR . 'composer.json';
+        $manifest = is_file($manifestPath) && is_readable($manifestPath) ? @file_get_contents($manifestPath) : false;
+        $composer = is_string($manifest) ? json_decode($manifest, true) : null;
+        if (!is_array($composer)) return false;
+        $packages = array_merge((array) ($composer['require'] ?? []), (array) ($composer['require-dev'] ?? []));
+        foreach (['laravel/framework','symfony/framework-bundle','codeigniter4/framework','cakephp/cakephp','yiisoft/yii2','slim/slim','mezzio/mezzio','nette/application','laminas/laminas-mvc','drupal/core'] as $frameworkPackage) {
+            if (array_key_exists($frameworkPackage, $packages)) return true;
+        }
+        return false;
     }
 
-    private static function hasVanillaPhpStructure(string $path): bool
+    private static function readPhpSource(string $file): ?string
     {
-        $phpFiles = glob($path . '/*.php');
-        if (empty($phpFiles)) {
-            return false;
-        }
-
-        foreach ($phpFiles as $file) {
-            $content = file_get_contents($file);
-            if (strpos($content, '<?php') !== false && !strpos($content, 'namespace')) {
-                return true;
-            }
-        }
-
-        return false;
+        if (!is_file($file) || !is_readable($file)) return null;
+        $content = @file_get_contents($file);
+        return is_string($content) ? $content : null;
     }
 
     public function getAvailableCommands(): array
@@ -77,8 +77,7 @@ class VanillaPhpAdapter extends AbstractAdapter
 
     public function discover(): array
     {
-        $phpFiles = glob($this->projectPath . '/*.php') ?: [];
-        $composerPath = $this->projectPath . '/composer.json';
+        $phpFiles = array_values(array_filter(glob($this->projectPath . DIRECTORY_SEPARATOR . '*.php') ?: [], 'is_file'));
 
         $detectedFeatures = [];
         foreach ($phpFiles as $file) {
@@ -92,7 +91,7 @@ class VanillaPhpAdapter extends AbstractAdapter
 
         $database = null;
         if ($this->hasFile('.env') || $this->hasFile('.env.local')) {
-            $envContent = $this->readSafeFile($this->projectPath . '/.env');
+            $envContent = $this->readEnvironmentContent();
             if ($envContent !== null) {
                 if (strpos($envContent, 'DB_HOST') !== false) {
                     if (strpos($envContent, 'mysql') !== false || strpos($envContent, 'mysqli') !== false) {
@@ -115,7 +114,7 @@ class VanillaPhpAdapter extends AbstractAdapter
             'version' => phpversion(),
             'hasDocker' => $this->hasFile('Dockerfile') || $this->hasFile('docker-compose.yml'),
             'hasGit' => $this->hasFile('.git'),
-            'environmentFiles' => $this->findConfigFiles(['.env', '.env.local', '.env.production']),
+            'environmentFiles' => array_values(array_unique(array_map('basename', $this->findConfigFiles(['.env', '.env.local', '.env.production'])))),
             'configFiles' => $this->findConfigFiles(['composer.json', 'php.ini', 'web.config', '.htaccess']),
             'detectedFeatures' => array_unique($detectedFeatures),
             'phpFilesCount' => count($phpFiles),
@@ -127,7 +126,7 @@ class VanillaPhpAdapter extends AbstractAdapter
         $issues = [];
         $warnings = [];
 
-        if (!is_readable($this->projectPath . '/.env') && !is_readable($this->projectPath . '/.env.local')) {
+        if (!$this->isReadableFile($this->projectPath . '/.env') && !$this->isReadableFile($this->projectPath . '/.env.local')) {
             $warnings[] = 'No .env file found - may use default configuration';
         }
 
@@ -143,8 +142,8 @@ class VanillaPhpAdapter extends AbstractAdapter
             $issues[] = 'uploads directory not writable';
         }
 
-        $phpCheck = @ini_get('allow_url_fopen');
-        if ($phpCheck !== '1' && $phpCheck !== '1') {
+        $phpCheck = ini_get('allow_url_fopen');
+        if (!filter_var($phpCheck, FILTER_VALIDATE_BOOLEAN)) {
             $warnings[] = 'allow_url_fopen may be disabled';
         }
 
@@ -172,5 +171,23 @@ class VanillaPhpAdapter extends AbstractAdapter
     public function getProject(): ?Project
     {
         return $this->project;
+    }
+
+    private function isReadableFile(string $path): bool
+    {
+        return is_file($path) && is_readable($path);
+    }
+
+    private function readEnvironmentContent(): ?string
+    {
+        foreach (['.env','.env.local'] as $filename) {
+            $path = $this->projectPath . DIRECTORY_SEPARATOR . $filename;
+            if (!$this->isReadableFile($path)) continue;
+            $realPath = realpath($path);
+            if ($realPath === false || !str_starts_with($realPath, $this->projectPath . DIRECTORY_SEPARATOR)) continue;
+            $content = @file_get_contents($realPath);
+            if (is_string($content)) return $content;
+        }
+        return null;
     }
 }

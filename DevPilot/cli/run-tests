@@ -13,6 +13,7 @@ require_once dirname(__DIR__) . '/tests/DiscoveryTest.php';
 require_once dirname(__DIR__) . '/tests/AdapterCompatibilityTest.php';
 require_once dirname(__DIR__) . '/tests/WebsiteSecurityTest.php';
 require_once dirname(__DIR__) . '/tests/WebsitePersistenceTest.php';
+require_once dirname(__DIR__) . '/tests/ProjectConnectorTest.php';
 require_once dirname(__DIR__, 2) . '/admin/includes/devpilot-bootstrap.php';
 
 use DevPilot\Config;
@@ -668,6 +669,7 @@ runTestClass(\DevPilot\Tests\AdapterCompatibilityTest::class, $testResults);
 
 echo "\n9b. Website Registration Security Tests\n";
 runTestClass(\DevPilot\Tests\WebsiteSecurityTest::class, $testResults);
+runTestClass(\DevPilot\Tests\ProjectConnectorTest::class, $testResults);
 
 echo "\n9c. Website Route and Side-Effect Boundary Tests\n";
 $results = test('website routes preserve admin auth, CSRF, write-only secrets, and no remote actions', function() {

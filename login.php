@@ -28,6 +28,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif ($identifier === '' || text_length($identifier) > 160 || $password === '' || strlen($password) > 4096) {
         $error = 'Unable to sign in with those details.';
     } else {
+      if (!$pdo instanceof PDO) {
+        throw new RuntimeException('Database connection unavailable.');
+      }
         $statement = $pdo->prepare('SELECT id, username, email, password_hash, role FROM users WHERE username = ? OR email = ? LIMIT 1');
         $statement->execute([$identifier, $identifier]);
         $user = $statement->fetch();

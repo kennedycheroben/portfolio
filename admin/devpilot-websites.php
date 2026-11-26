@@ -7,11 +7,13 @@ requireAdmin();
 header('Cache-Control: no-store, private');
 header('Pragma: no-cache');
 require_once __DIR__ . '/../includes/db.php';
-require_once __DIR__ . '/../DevPilot/autoload.php';
+require_once __DIR__ . '/../includes/devpilot-loader.php';
+devpilot_register_autoloader();
 
 use DevPilot\Website\WebsiteAuth;
 use DevPilot\Website\WebsiteScopePolicy;
 use DevPilot\Website\WebsiteServices;
+use DevPilot\Connector\ConnectorPolicy;
 
 if (!$pdo instanceof PDO) {
     http_response_code(503);
@@ -22,6 +24,15 @@ $service = WebsiteServices::registration($pdo);
 $adminId = WebsiteAuth::currentAdminId();
 $error = '';
 $created = false;
+$connectorProjectId = 'php-' . substr(hash('sha256', rtrim((string) (getenv('APP_URL') ?: ''), '/') . '|' . dirname(__DIR__), false), 0, 24);
+$connectorStatus = null;
+try { $connectorStatus = WebsiteServices::connector($pdo)->status($connectorProjectId, $adminId); } catch (Throwable) { $connectorStatus = null; }
+$appEnvironment = (string) getenv('APP_ENV');
+$connectorEnabled = in_array($appEnvironment, ['development','local','staging'], true)
+    || ($appEnvironment === 'production' && getenv('DEVPILOT_CONNECTOR_SECURITY_VERIFIED') === '1');
+$hubLabel = 'not configured';
+$hubUrl = '';
+try { $hubUrl = ConnectorPolicy::configuredHubUrl(); $hubLabel = (string) parse_url($hubUrl, PHP_URL_HOST); } catch (Throwable) { $connectorEnabled = false; }
 $postedUsername = '';
 $postedPassword = '';
 $wipePostedCredentials = static function () use (&$postedUsername, &$postedPassword): void {
@@ -89,9 +100,46 @@ require __DIR__ . '/includes/admin-sidebar.php';
 ?>
 <main class="admin-main" id="main-content">
   <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
-    <div><h1 class="mb-1">Registered Websites</h1><p class="text-muted mb-0">Phase 1 stores authorization and credentials only. It will not contact these websites.</p></div>
+    <div><h1 class="mb-1">Registered Websites</h1><p class="text-muted mb-0">Legacy website authorizations are preserved. Project connectors use one-time pairing and scoped bearer tokens.</p></div>
     <a class="btn-secondary" href="devpilot.php">Back to DevPilot</a>
   </div>
+
+  <section class="card mb-4" aria-labelledby="connect-devpilot-heading">
+    <div class="card-header"><strong id="connect-devpilot-heading">Connect this project to DevPilot</strong></div>
+    <div class="card-body">
+      <p class="mb-3">DevPilot identifies this project from its server-side origin and identity. No project URL or credential is entered here. Configured Hub: <strong><?= e($hubLabel) ?></strong>.</p>
+      <?php if ($hubUrl !== ''): ?><p><a href="<?= e($hubUrl . '/admin/devpilot-connected-projects.php') ?>">Open the Hub project registry</a></p><?php endif; ?>
+      <?php if ($hubLabel === 'not configured'): ?><div class="alert alert-info" role="status">Set <code>DEVPILOT_HUB_URL</code> to the separate DevPilot Hub HTTPS origin before connecting.</div><?php elseif (!$connectorEnabled): ?><div class="alert alert-info" role="status">Project connections are disabled until the environment is approved; production also requires the security review flag.</div><?php endif; ?>
+      <p id="connector-feedback" class="visually-hidden" role="status" aria-live="polite"></p>
+      <form class="connector-action" method="post" action="api/devpilot-connector.php">
+        <?= csrf_field() ?><input type="hidden" name="action" value="connect"><button class="btn-accent" type="submit" <?= $connectorEnabled ? '' : 'disabled' ?>><?= ($connectorStatus['status'] ?? '') === 'active' ? 'Reconnect DevPilot' : 'Connect DevPilot' ?></button>
+      </form>
+      <?php if (is_array($connectorStatus)): ?>
+        <hr><dl class="row mb-3">
+          <dt class="col-sm-3">Status</dt><dd class="col-sm-9"><?= e((string) $connectorStatus['status']) ?></dd>
+          <dt class="col-sm-3">Connected DevPilot Hub</dt><dd class="col-sm-9"><?= e($hubLabel) ?></dd>
+          <dt class="col-sm-3">Project identity</dt><dd class="col-sm-9"><?= e((string) $connectorStatus['project_id']) ?> · <?= e((string) $connectorStatus['origin']) ?></dd>
+          <dt class="col-sm-3">Granted permissions</dt><dd class="col-sm-9"><?= e(implode(', ', (array) $connectorStatus['scopes'])) ?></dd>
+          <dt class="col-sm-3">Last successful connection</dt><dd class="col-sm-9"><?= is_numeric($connectorStatus['connected_at'] ?? null) ? e(date('Y-m-d H:i:s T', (int) $connectorStatus['connected_at'])) : '—' ?></dd>
+          <dt class="col-sm-3">Last authenticated Hub request</dt><dd class="col-sm-9"><?= is_numeric($connectorStatus['last_seen_at'] ?? null) ? e(date('Y-m-d H:i:s T', (int) $connectorStatus['last_seen_at'])) : '—' ?></dd>
+        </dl>
+        <?php if ($connectorStatus['status'] === 'active'): ?>
+          <div class="d-flex gap-2 flex-wrap">
+            <form class="connector-action" method="post" action="api/devpilot-connector.php"><?= csrf_field() ?><input type="hidden" name="action" value="refresh"><button class="btn-secondary" type="submit" <?= $connectorEnabled ? '' : 'disabled' ?>>Refresh inspection</button></form>
+            <form class="connector-action" method="post" action="api/devpilot-connector.php"><?= csrf_field() ?><input type="hidden" name="action" value="disconnect"><button class="btn-secondary" type="submit">Disconnect DevPilot</button></form>
+          </div>
+        <?php endif; ?>
+      <?php endif; ?>
+      <script>
+        document.querySelectorAll('.connector-action').forEach(form => form.addEventListener('submit', async event => {
+          event.preventDefault(); const button = form.querySelector('button'); const feedback = document.getElementById('connector-feedback');
+          button.disabled = true; feedback.classList.remove('visually-hidden'); feedback.textContent = 'Working…';
+          try { const response = await fetch(form.action, {method:'POST', headers:{'X-CSRF-Token':form.querySelector('[name="csrf_token"]').value}, body:new FormData(form)}); const data = await response.json(); if (!response.ok || !data.success) throw new Error(data.error || 'Connector action failed.'); feedback.textContent = data.message || 'Connector updated.'; if (data.approval_url) { location.assign(data.approval_url); return; } location.reload(); }
+          catch (error) { feedback.textContent = error.message; alert(error.message); button.disabled = false; }
+        }));
+      </script>
+    </div>
+  </section>
 
   <section class="card mb-4" aria-labelledby="register-website-heading">
     <div class="card-header"><strong id="register-website-heading">Register a website</strong></div>
