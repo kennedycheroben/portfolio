@@ -36,4 +36,14 @@ final class WebsiteServices
     {
         return new \DevPilot\Connector\ConnectedProjectStore($pdo, new CredentialVault());
     }
+
+    public static function hubPairings(PDO $pdo): \DevPilot\Connector\HubPairingRepository
+    {
+        return new \DevPilot\Connector\HubPairingRepository($pdo, new CredentialVault());
+    }
+
+    public static function hubConnector(PDO $pdo): \DevPilot\Connector\HubConnectorService
+    {
+        return new \DevPilot\Connector\HubConnectorService(self::hubPairings($pdo), self::connectedProjects($pdo));
+    }
 }

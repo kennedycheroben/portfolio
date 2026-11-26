@@ -60,10 +60,10 @@ final class ProjectConnectorService
         if (!hash_equals($connection['project_id'], $projectId) || !hash_equals($connection['origin'], ConnectorPolicy::origin($origin))) throw new RuntimeException('Connector authorization failed.');
         $this->store->revokeConnection($connection['connection_id'], $now);
     }
-    public function status(string $projectId): ?array
+    public function status(string $projectId, ?int $ownerId = null): ?array
     {
         $row = $this->store->findConnectionByProject($projectId);
-        if ($row === null) return null;
+        if ($row === null || ($ownerId !== null && (int) ($row['owner_id'] ?? 0) !== $ownerId)) return null;
         unset($row['token_hash'], $row['scopes_json']);
         return $row;
     }

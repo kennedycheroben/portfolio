@@ -12,10 +12,11 @@ final class ConnectorHttpClient
     {
         if (!function_exists('curl_init')) throw new RuntimeException('Secure connector transport is unavailable.');
         $origin = ConnectorPolicy::origin($origin);
-        if (!in_array($path, ['/api/devpilot-connector.php?action=authorize', '/api/devpilot-connector.php?action=inspect', '/api/devpilot-connector.php?action=revoke'], true)) {
+        if (!in_array($path, ['/api/devpilot-connector.php?action=authorize', '/api/devpilot-connector.php?action=inspect', '/api/devpilot-connector.php?action=revoke', '/api/devpilot-hub-connector.php?action=request'], true)) {
             throw new RuntimeException('Connector operation is not supported.');
         }
         $host = (string) parse_url($origin, PHP_URL_HOST);
+        $port = (int) (parse_url($origin, PHP_URL_PORT) ?? 443);
         $ips = ConnectorPolicy::publicAddresses($host);
         $url = $origin . $path;
         $body = json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
@@ -26,7 +27,7 @@ final class ConnectorHttpClient
             $headers[] = 'Authorization: Bearer ' . $bearer;
         }
         $resolve = [];
-        foreach ($ips as $ip) $resolve[] = $host . ':443:' . (str_contains($ip, ':') ? '[' . $ip . ']' : $ip);
+        foreach ($ips as $ip) $resolve[] = $host . ':' . $port . ':' . (str_contains($ip, ':') ? '[' . $ip . ']' : $ip);
         $handle = curl_init($url);
         curl_setopt_array($handle, [
             CURLOPT_POST => true,
@@ -48,6 +49,10 @@ final class ConnectorHttpClient
                 return strlen($chunk);
             },
         ]);
+        if (getenv('DEVPILOT_CONNECTOR_TEST_MODE') === '1' && getenv('APP_ENV') !== 'production') {
+            $testCa = getenv('DEVPILOT_CONNECTOR_TEST_CA');
+            if (is_string($testCa) && $testCa !== '' && is_file($testCa) && is_readable($testCa)) curl_setopt($handle, CURLOPT_CAINFO, $testCa);
+        }
         $ok = curl_exec($handle);
         $status = (int) curl_getinfo($handle, CURLINFO_RESPONSE_CODE);
         curl_close($handle);

@@ -12,6 +12,7 @@ require_once __DIR__ . '/../DevPilot/autoload.php';
 use DevPilot\Website\WebsiteAuth;
 use DevPilot\Website\WebsiteScopePolicy;
 use DevPilot\Website\WebsiteServices;
+use DevPilot\Connector\ConnectorPolicy;
 
 if (!$pdo instanceof PDO) {
     http_response_code(503);
@@ -24,10 +25,13 @@ $error = '';
 $created = false;
 $connectorProjectId = 'php-' . substr(hash('sha256', rtrim((string) (getenv('APP_URL') ?: ''), '/') . '|' . dirname(__DIR__), false), 0, 24);
 $connectorStatus = null;
-try { $connectorStatus = WebsiteServices::connectedProjects($pdo)->status($adminId, $connectorProjectId); } catch (Throwable) { $connectorStatus = null; }
+try { $connectorStatus = WebsiteServices::connector($pdo)->status($connectorProjectId, $adminId); } catch (Throwable) { $connectorStatus = null; }
 $appEnvironment = (string) getenv('APP_ENV');
 $connectorEnabled = in_array($appEnvironment, ['development','local','staging'], true)
     || ($appEnvironment === 'production' && getenv('DEVPILOT_CONNECTOR_SECURITY_VERIFIED') === '1');
+$hubLabel = 'not configured';
+$hubUrl = '';
+try { $hubUrl = ConnectorPolicy::configuredHubUrl(); $hubLabel = (string) parse_url($hubUrl, PHP_URL_HOST); } catch (Throwable) { $connectorEnabled = false; }
 $postedUsername = '';
 $postedPassword = '';
 $wipePostedCredentials = static function () use (&$postedUsername, &$postedPassword): void {
@@ -102,8 +106,9 @@ require __DIR__ . '/includes/admin-sidebar.php';
   <section class="card mb-4" aria-labelledby="connect-devpilot-heading">
     <div class="card-header"><strong id="connect-devpilot-heading">Connect this project to DevPilot</strong></div>
     <div class="card-body">
-      <p class="mb-3">DevPilot identifies this project from its server-side origin and identity. No project URL or credential is entered here.</p>
-      <?php if (!$connectorEnabled): ?><div class="alert alert-info" role="status">Project connections are disabled in production until the required security review is complete.</div><?php endif; ?>
+      <p class="mb-3">DevPilot identifies this project from its server-side origin and identity. No project URL or credential is entered here. Configured Hub: <strong><?= e($hubLabel) ?></strong>.</p>
+      <?php if ($hubUrl !== ''): ?><p><a href="<?= e($hubUrl . '/admin/devpilot-connected-projects.php') ?>">Open the Hub project registry</a></p><?php endif; ?>
+      <?php if ($hubLabel === 'not configured'): ?><div class="alert alert-info" role="status">Set <code>DEVPILOT_HUB_URL</code> to the separate DevPilot Hub HTTPS origin before connecting.</div><?php elseif (!$connectorEnabled): ?><div class="alert alert-info" role="status">Project connections are disabled until the environment is approved; production also requires the security review flag.</div><?php endif; ?>
       <p id="connector-feedback" class="visually-hidden" role="status" aria-live="polite"></p>
       <form class="connector-action" method="post" action="api/devpilot-connector.php">
         <?= csrf_field() ?><input type="hidden" name="action" value="connect"><button class="btn-accent" type="submit" <?= $connectorEnabled ? '' : 'disabled' ?>><?= ($connectorStatus['status'] ?? '') === 'active' ? 'Reconnect DevPilot' : 'Connect DevPilot' ?></button>
@@ -111,15 +116,11 @@ require __DIR__ . '/includes/admin-sidebar.php';
       <?php if (is_array($connectorStatus)): ?>
         <hr><dl class="row mb-3">
           <dt class="col-sm-3">Status</dt><dd class="col-sm-9"><?= e((string) $connectorStatus['status']) ?></dd>
-          <dt class="col-sm-3">Connected DevPilot</dt><dd class="col-sm-9">DevPilot · <?= e((string) $connectorStatus['project_name']) ?></dd>
+          <dt class="col-sm-3">Connected DevPilot Hub</dt><dd class="col-sm-9"><?= e($hubLabel) ?></dd>
           <dt class="col-sm-3">Project identity</dt><dd class="col-sm-9"><?= e((string) $connectorStatus['project_id']) ?> · <?= e((string) $connectorStatus['origin']) ?></dd>
           <dt class="col-sm-3">Granted permissions</dt><dd class="col-sm-9"><?= e(implode(', ', (array) $connectorStatus['scopes'])) ?></dd>
           <dt class="col-sm-3">Last successful connection</dt><dd class="col-sm-9"><?= is_numeric($connectorStatus['connected_at'] ?? null) ? e(date('Y-m-d H:i:s T', (int) $connectorStatus['connected_at'])) : '—' ?></dd>
-          <dt class="col-sm-3">Last seen</dt><dd class="col-sm-9"><?= is_numeric($connectorStatus['last_seen_at'] ?? null) ? e(date('Y-m-d H:i:s T', (int) $connectorStatus['last_seen_at'])) : '—' ?></dd>
-          <dt class="col-sm-3">Last inspection</dt><dd class="col-sm-9"><?= is_numeric($connectorStatus['last_inspected_at'] ?? null) ? e(date('Y-m-d H:i:s T', (int) $connectorStatus['last_inspected_at'])) : '—' ?></dd>
-          <?php if (is_array($connectorStatus['inspection'] ?? null)): $inspection = $connectorStatus['inspection']; ?>
-            <dt class="col-sm-3">Inspection health</dt><dd class="col-sm-9"><?= e((string) ($inspection['connection_health'] ?? 'unknown')) ?> · <?= e((string) ($inspection['technology'] ?? 'unknown')) ?> · <?= e((string) ($inspection['framework'] ?? 'unknown')) ?> · PHP <?= e((string) ($inspection['runtime'] ?? '')) ?></dd>
-          <?php elseif (!empty($connectorStatus['last_error'])): ?><dt class="col-sm-3">Last inspection error</dt><dd class="col-sm-9"><?= e((string) $connectorStatus['last_error']) ?></dd><?php endif; ?>
+          <dt class="col-sm-3">Last authenticated Hub request</dt><dd class="col-sm-9"><?= is_numeric($connectorStatus['last_seen_at'] ?? null) ? e(date('Y-m-d H:i:s T', (int) $connectorStatus['last_seen_at'])) : '—' ?></dd>
         </dl>
         <?php if ($connectorStatus['status'] === 'active'): ?>
           <div class="d-flex gap-2 flex-wrap">
@@ -132,7 +133,7 @@ require __DIR__ . '/includes/admin-sidebar.php';
         document.querySelectorAll('.connector-action').forEach(form => form.addEventListener('submit', async event => {
           event.preventDefault(); const button = form.querySelector('button'); const feedback = document.getElementById('connector-feedback');
           button.disabled = true; feedback.classList.remove('visually-hidden'); feedback.textContent = 'Working…';
-          try { const response = await fetch(form.action, {method:'POST', headers:{'X-CSRF-Token':form.querySelector('[name="csrf_token"]').value}, body:new FormData(form)}); const data = await response.json(); if (!response.ok || !data.success) throw new Error(data.error || 'Connector action failed.'); feedback.textContent = data.message || 'Connector updated.'; location.reload(); }
+          try { const response = await fetch(form.action, {method:'POST', headers:{'X-CSRF-Token':form.querySelector('[name="csrf_token"]').value}, body:new FormData(form)}); const data = await response.json(); if (!response.ok || !data.success) throw new Error(data.error || 'Connector action failed.'); feedback.textContent = data.message || 'Connector updated.'; if (data.approval_url) { location.assign(data.approval_url); return; } location.reload(); }
           catch (error) { feedback.textContent = error.message; alert(error.message); button.disabled = false; }
         }));
       </script>

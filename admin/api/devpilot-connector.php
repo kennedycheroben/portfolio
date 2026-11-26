@@ -25,7 +25,6 @@ $projectName = 'Portfolio project';
 $ownerId = WebsiteAuth::currentAdminId();
 $action = input_string($_POST, 'action') ?: 'connect';
 $service = WebsiteServices::connector($pdo);
-$projects = WebsiteServices::connectedProjects($pdo);
 $http = new ConnectorHttpClient();
 
 try {
@@ -36,49 +35,22 @@ try {
         throw new RuntimeException('The connector is disabled until its environment is explicitly approved.');
     }
     $origin = ConnectorPolicy::origin($identityOrigin);
+    $hubUrl = ConnectorPolicy::configuredHubUrl();
+    if (hash_equals($origin, $hubUrl)) throw new RuntimeException('DEVPILOT_HUB_URL must point to a separately hosted DevPilot Hub.');
     if ($action === 'connect') {
         $pairing = $service->beginPairing($projectId, $projectName, $origin, [ConnectorPolicy::INSPECT], time(), $ownerId);
-        $authorization = $http->post($origin, '/api/devpilot-connector.php?action=authorize', null, ['pairing_code'=>$pairing['pairing_code']]);
-        $connection = $authorization['connection'] ?? null;
-        try {
-            if (!is_array($connection) || !is_string($connection['access_token'] ?? null)
-                || !hash_equals($projectId, (string) ($connection['project_id'] ?? ''))
-                || !hash_equals($origin, (string) ($connection['origin'] ?? ''))
-                || !in_array(ConnectorPolicy::INSPECT, (array) ($connection['scopes'] ?? []), true)) {
-                throw new RuntimeException('Project authorization response could not be verified.');
-            }
-            $result = $http->post($origin, '/api/devpilot-connector.php?action=inspect', $connection['access_token']);
-            $inspection = $result['inspection'] ?? null;
-            if (!is_array($inspection) || !hash_equals($projectId, (string) ($inspection['project_id'] ?? '')) || !hash_equals($origin, (string) ($inspection['origin'] ?? ''))) throw new RuntimeException('Project inspection response could not be verified.');
-            $projects->save($ownerId, $connection, $connection['access_token'], $inspection, time());
-        } catch (Throwable $exception) {
-            if (is_array($connection) && is_string($connection['access_token'] ?? null)) {
-                try { $http->post($origin, '/api/devpilot-connector.php?action=revoke', $connection['access_token']); } catch (Throwable) {}
-            }
-            throw $exception;
-        }
-        echo json_encode(['success'=>true,'message'=>'DevPilot connected and inspected the project.','connection'=>$projects->status($ownerId,$projectId)], JSON_THROW_ON_ERROR);
+        $request = $http->post($hubUrl, '/api/devpilot-hub-connector.php?action=request', null, [
+            'pairing_code'=>$pairing['pairing_code'], 'project_id'=>$projectId, 'project_name'=>$projectName,
+            'origin'=>$origin, 'scopes'=>[ConnectorPolicy::INSPECT], 'return_url'=>$origin . '/admin/devpilot-websites.php',
+        ]);
+        $requestId = (string) ($request['request_id'] ?? '');
+        if (!preg_match('/^[a-f0-9]{32}$/', $requestId)) throw new RuntimeException('The DevPilot Hub returned an invalid approval request.');
+        echo json_encode(['success'=>true,'message'=>'Approve this project in DevPilot Hub to finish connecting.','approval_url'=>$hubUrl . '/admin/devpilot-connector-approve.php?request=' . $requestId], JSON_THROW_ON_ERROR);
         exit;
     }
-    if ($action === 'refresh') {
-        try {
-            $token = $projects->token($ownerId, $projectId);
-            $result = $http->post($origin, '/api/devpilot-connector.php?action=inspect', $token);
-            $inspection = $result['inspection'] ?? null;
-            if (!is_array($inspection) || !hash_equals($projectId, (string) ($inspection['project_id'] ?? '')) || !hash_equals($origin, (string) ($inspection['origin'] ?? ''))) throw new RuntimeException('Project inspection response could not be verified.');
-            $projects->updateInspection($ownerId, $projectId, $inspection, time());
-        } catch (Throwable $exception) {
-            $projects->recordInspectionFailure($ownerId, $projectId, time());
-            throw $exception;
-        }
-        echo json_encode(['success'=>true,'message'=>'Project inspection refreshed.','connection'=>$projects->status($ownerId,$projectId)], JSON_THROW_ON_ERROR);
-        exit;
-    }
-    if ($action === 'disconnect') {
-        $token = $projects->token($ownerId, $projectId);
-        $http->post($origin, '/api/devpilot-connector.php?action=revoke', $token);
-        $projects->disconnect($ownerId, $projectId, time());
-        echo json_encode(['success'=>true,'message'=>'DevPilot authorization was revoked.']);
+    if (in_array($action, ['refresh','disconnect'], true)) {
+        $projectUrl = $hubUrl . '/admin/devpilot-connected-project-action.php?project_id=' . rawurlencode($projectId) . '&action=' . rawurlencode($action);
+        echo json_encode(['success'=>true,'message'=>'Continue in DevPilot Hub to complete this action.','approval_url'=>$projectUrl]);
         exit;
     }
     http_response_code(400);

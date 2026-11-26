@@ -1,13 +1,29 @@
--- Owner-bound DevPilot project registry and secure-pairing rate limit.
-ALTER TABLE `devpilot_connector_pairings` ADD COLUMN `owner_id` BIGINT UNSIGNED NOT NULL DEFAULT 0 AFTER `used_at`;
-ALTER TABLE `devpilot_connector_connections` ADD COLUMN `owner_id` BIGINT UNSIGNED NOT NULL DEFAULT 0 AFTER `revoked_at`;
-ALTER TABLE `devpilot_connector_connections` ADD KEY `idx_connector_owner_project` (`owner_id`,`project_id`,`status`);
-
-CREATE TABLE `devpilot_connector_attempts` (
+-- Hub-only state. These tables live in the Hub database, not in customer projects.
+CREATE TABLE `devpilot_hub_pairing_requests` (
   `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `ip_hash` BINARY(32) NOT NULL,
-  `attempted_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`), KEY `idx_connector_attempt_window` (`ip_hash`,`attempted_at`)
+  `request_id` CHAR(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `pairing_code_hash` BINARY(32) NOT NULL,
+  `project_id` VARCHAR(128) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `project_name` VARCHAR(160) NOT NULL,
+  `origin` VARCHAR(255) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `scopes_json` JSON NOT NULL,
+  `return_url` VARCHAR(512) NOT NULL,
+  `request_ip_hash` BINARY(32) NOT NULL,
+  `status` VARCHAR(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT 'pending',
+  `owner_id` BIGINT UNSIGNED NULL,
+  `credential_uuid` BINARY(16) NULL,
+  `cipher_algorithm` VARCHAR(64) NULL,
+  `data_key_version` VARCHAR(32) NULL,
+  `master_key_version` VARCHAR(32) NULL,
+  `payload_nonce` VARBINARY(64) NULL,
+  `payload_ciphertext` MEDIUMBLOB NULL,
+  `wrapped_dek_nonce` VARBINARY(64) NULL,
+  `wrapped_dek` VARBINARY(128) NULL,
+  `expires_at` TIMESTAMP NOT NULL,
+  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`), UNIQUE KEY `uq_hub_pair_request_id` (`request_id`), UNIQUE KEY `uq_hub_pair_code_hash` (`pairing_code_hash`),
+  KEY `idx_hub_pair_status_expiry` (`status`,`expires_at`), KEY `idx_hub_pair_ip_created` (`request_ip_hash`,`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `devpilot_connected_projects` (

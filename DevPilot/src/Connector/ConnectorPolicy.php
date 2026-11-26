@@ -10,6 +10,13 @@ final class ConnectorPolicy
     public const INSPECT = 'project.inspect.read';
     public const ALLOWED_SCOPES = [self::INSPECT];
 
+    public static function configuredHubUrl(): string
+    {
+        $value = getenv('DEVPILOT_HUB_URL');
+        if (!is_string($value) || trim($value) === '') throw new InvalidArgumentException('Configure DEVPILOT_HUB_URL to the independent DevPilot Hub HTTPS origin.');
+        return self::origin($value);
+    }
+
     public static function origin(string $origin): string
     {
         $parts = parse_url(trim($origin));
@@ -18,22 +25,27 @@ final class ConnectorPolicy
             throw new InvalidArgumentException('Connector origin must be a public HTTPS origin.');
         }
         $localSuffixes = ['.local','.internal','.localhost','.test','.invalid','.example','.home.arpa'];
-        $localOnly = $host === 'localhost';
+        $testMode = self::isolatedTestMode();
+        $localOnly = $host === 'localhost' && !$testMode;
         foreach ($localSuffixes as $suffix) if (str_ends_with($host, $suffix)) $localOnly = true;
-        if (filter_var($host, FILTER_VALIDATE_IP) !== false || !str_contains($host, '.') || $localOnly) {
+        if (filter_var($host, FILTER_VALIDATE_IP) !== false || (!str_contains($host, '.') && !($testMode && $host === 'localhost')) || $localOnly) {
             throw new InvalidArgumentException('Private and literal IP connector origins are not allowed.');
         }
         foreach (explode('.', $host) as $label) {
             if ($label === '' || strlen($label) > 63 || !preg_match('/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/', $label)) throw new InvalidArgumentException('Connector origin hostname is invalid.');
         }
         $port = (int) ($parts['port'] ?? 443);
-        if ($port !== 443) throw new InvalidArgumentException('Connector origins must use HTTPS port 443.');
-        return 'https://' . $host;
+        if ($port !== 443) {
+            $testPorts = array_filter(array_map('intval', explode(',', (string) getenv('DEVPILOT_CONNECTOR_TEST_PORTS'))));
+            if (!$testMode || !in_array($port, $testPorts, true)) throw new InvalidArgumentException('Connector origins must use HTTPS port 443.');
+        }
+        return 'https://' . $host . ($port === 443 ? '' : ':' . $port);
     }
 
     /** Resolve once per request and reject the complete DNS answer set unless every address is public. */
     public static function publicAddresses(string $host): array
     {
+        if (self::isolatedTestMode() && strtolower($host) === 'localhost') return ['127.0.0.1'];
         if (filter_var($host, FILTER_VALIDATE_IP) !== false) {
             $addresses = [$host];
         } else {
@@ -47,11 +59,17 @@ final class ConnectorPolicy
         $addresses = array_values(array_unique($addresses));
         if ($addresses === []) throw new InvalidArgumentException('Connector host could not be resolved.');
         foreach ($addresses as $address) {
+            if (self::isolatedTestMode() && $address === '127.0.0.1') continue;
             if (filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false || self::isProhibitedAddress($address)) {
                 throw new InvalidArgumentException('Connector host resolves to a prohibited IP address.');
             }
         }
         return $addresses;
+    }
+
+    private static function isolatedTestMode(): bool
+    {
+        return getenv('DEVPILOT_CONNECTOR_TEST_MODE') === '1' && getenv('APP_ENV') !== 'production';
     }
 
     private static function isProhibitedAddress(string $address): bool

@@ -1,36 +1,51 @@
-# DevPilot project connector
+# Independent DevPilot Hub and project connector
 
-The connector protocol pairs a project from its authenticated administrator dashboard, registers that project in the owner-scoped DevPilot registry, and fetches a sanitized read-only inspection. No remote execution operation is defined.
+The Hub and each customer project are separate application instances with separate databases, administrator sessions, and keyrings. Customer-side code uses only `APP_URL` for its own identity and the explicit `DEVPILOT_HUB_URL` for the Hub. An empty Hub setting is an error; the project will not silently call itself.
 
-## Connection flow
+## Pairing and approval
 
-1. An administrator submits `POST admin/api/devpilot-connector.php` with a valid session CSRF token. The server derives the project ID from `APP_URL` and the application root, and captures the authenticated administrator ID.
-2. DevPilot creates a random 192-bit pairing code. Only its SHA-256 hash, project identity, approved scope, owner ID, and five-minute expiry are stored.
-3. DevPilot calls the project's fixed HTTPS endpoint `POST /api/devpilot-connector.php?action=authorize` with `{"pairing_code":"…"}`. The project endpoint derives its own identity from server configuration and atomically consumes the code. The response contains one bearer token.
-4. DevPilot immediately calls `POST /api/devpilot-connector.php?action=inspect` with `Authorization: Bearer dvp_…`. The project checks the token, owner-bound connection, project ID, origin, expiry and `project.inspect.read` scope.
-5. DevPilot encrypts the token with the existing sodium credential vault, upserts the owner/project record, and stores the allow-listed inspection JSON. Plaintext token material is returned only in the authorize response and held in memory while the workflow runs.
+1. A signed-in project administrator submits the CSRF-protected Connect action. The project derives its ID from its canonical `APP_URL` and application root, binds the pairing to the administrator, and creates a 192-bit code with a five-minute lifetime. The project database stores only the code hash.
+2. The project posts the code hash context, project identity, origin, fixed requested scope, and a constrained return URL to the configured Hub over verified HTTPS. The Hub stores the code hash and an encrypted copy needed to complete the callback. Hub approval requests expire after five minutes and are rate-limited by source address.
+3. The Hub approval page requires a signed-in Hub administrator and CSRF validation. It shows the project origin and scope before approval.
+4. On approval, the Hub decrypts the pending code and makes a pinned HTTPS request to the project connector. The project atomically consumes the code, verifies its own server-derived project ID and origin, then returns a one-time bearer token. The Hub performs an authenticated inspection before registering the project under the approving Hub administrator.
+5. The customer project stores only the token hash. The Hub stores the bearer token encrypted with the sodium credential vault. Pairing-code ciphertext is erased after approval or rejection.
 
-## Project endpoints
+## Project connector protocol
 
-All endpoints accept POST only and return JSON with `success`. The authorize endpoint accepts an 8 KiB maximum JSON body and requires a valid, unexpired, unused pairing code. Failed authorization attempts are counted per source address for five minutes (maximum ten). Pairing codes are consumed transactionally; failed identity or scope checks cannot be replayed.
+- `POST /api/devpilot-connector.php?action=authorize` with JSON `{"pairing_code":"…"}` consumes the pairing request and returns `{success, connection}` once.
+- `POST /api/devpilot-connector.php?action=inspect` with `Authorization: Bearer dvp_…` returns a minimal project overview and checks token state, project identity, origin, expiry, and `project.inspect.read` on every request.
+- `POST /api/devpilot-connector.php?action=revoke` with the bearer invalidates it immediately.
 
-Inspection and revocation require a bearer token. Inspection returns project ID/name/origin, PHP technology and runtime, framework label, connector capability and scope, timestamps, and health. It never reads `.env`, credentials, database configuration, session state, or arbitrary project files. Revocation marks the credential inactive at the project endpoint immediately.
+Inspection includes the project ID/name/origin, PHP technology and runtime, a known framework label, available read-only capability, authorized scopes, timestamps, and health. The endpoint does not read `.env`, credentials, database configuration, sessions, keys, or arbitrary files. No remote execution capability is available.
+
+Hub connection records are keyed by Hub owner and project ID. Refresh performs a new authenticated HTTPS inspection and persists the sanitized response. Disconnect calls the project revoke endpoint before marking the Hub record revoked. A failed revoke leaves the Hub record active so the administrator can retry.
 
 ## Network controls
 
-The DevPilot HTTP client accepts only three fixed endpoint paths over HTTPS port 443. It resolves the configured hostname immediately before each request, rejects any DNS answer in private, loopback, link-local, documentation, multicast, reserved or otherwise prohibited ranges, and pins the validated DNS answers to the TLS request. Peer and hostname verification are enabled, the connect timeout is four seconds, the total timeout is ten seconds, and response bodies are capped at 1 MiB. Redirect following is disabled: redirect responses fail closed, so deployments must serve the connector endpoint directly at the canonical HTTPS origin.
+The connector transport accepts only fixed Hub-request, authorize, inspect, and revoke paths over HTTPS. It resolves DNS immediately before each request, rejects any prohibited answer (including loopback, private, link-local, documentation, multicast, reserved, IPv4-mapped, and special-purpose ranges), pins the complete validated answer set using cURL resolve entries, verifies the TLS chain and hostname, times out after four seconds to connect and ten seconds overall, and caps responses at 1 MiB. Redirect following is disabled; a 3xx response fails closed. Connector URLs are not accepted from request input.
 
-## Local and staging configuration
+The only loopback exception is the isolated integration harness, which requires `DEVPILOT_CONNECTOR_TEST_MODE=1`, a non-production environment, two explicitly listed test ports, and a trusted test CA. It does not disable TLS verification and cannot enable in `APP_ENV=production`.
 
-- Use a public staging hostname with a valid HTTPS certificate; loopback/private project origins are intentionally rejected by outbound transport validation.
-- Apply `migrations/004_devpilot_connector.sql` followed by `migrations/005_devpilot_connected_projects.sql` to a development/staging database. Do not apply these migrations to production as part of this implementation task.
-- Configure `APP_URL` to the canonical HTTPS origin.
-- Enable PHP cURL and sodium.
-- Configure `DEVPILOT_VAULT_KEYRING_FILE` to an absolute path outside the web root. The JSON file shape is `{"active_version":"v1","keys":{"v1":"<base64-encoded-32-byte-key>"}}`; protect the file from other users. Do not put key material in the repository or web root.
-- Keep `DEVPILOT_CONNECTOR_SECURITY_VERIFIED` unset. Production connect and refresh actions remain disabled until a separate security review has actually passed. Disconnect remains available for revocation.
+## Separate instance setup
 
-## Migration rollback
+For staging, deploy the Hub and customer project as separate HTTPS applications with separate MySQL databases and separate sodium keyrings.
 
-To roll back only this connector registry migration, first stop using the new dashboard actions, then apply `migrations/005_devpilot_connected_projects.rollback.sql`. To remove the original connector schema as well, apply `migrations/004_devpilot_connector.rollback.sql` afterward. The rollback deletes connector records and inspection history; back up staging data first if it must be retained.
+- Configure the Hub instance's `APP_URL` and `DEVPILOT_HUB_URL` to the Hub's canonical HTTPS origin.
+- Configure the customer instance's `APP_URL` to its own canonical origin and `DEVPILOT_HUB_URL` to the independently hosted Hub origin. These values must differ.
+- On the customer database, apply `migrations/004_devpilot_connector.sql` followed by `migrations/005_devpilot_project_owner.sql`.
+- On the Hub database, apply `migrations/006_devpilot_hub_registry.sql` only, in addition to the Hub application's existing base schema.
+- Configure `DEVPILOT_VAULT_KEYRING_FILE` separately on each instance to an absolute path outside the web root. Its shape is `{"active_version":"v1","keys":{"v1":"<base64-encoded-32-byte-key>"}}`. Keep key material out of the repository and web root.
+- Enable PHP cURL, OpenSSL, PDO MySQL and sodium on both instances. If sodium is unavailable, pairing secrets and Hub tokens cannot be persisted; the connector fails closed.
+- Leave `DEVPILOT_CONNECTOR_SECURITY_VERIFIED` unset. Production connect and refresh remain disabled until a separate review has passed; disconnect remains available.
 
-Future Laravel, Node.js, Python and other project adapters can implement the same fixed endpoints, server-derived identity, one-time pairing, token hashing, `project.inspect.read` authorization, sanitized response, and immediate revocation behavior.
+The repeatable local integration test creates two independent SQLite databases and two PHP application servers behind isolated TLS proxies with a temporary trusted CA. It exercises the real project and Hub HTTP endpoints, Hub administrator session and CSRF, encrypted Hub token storage, authenticated inspection, refresh, revocation, and rejection of the old token:
+
+```powershell
+& 'C:\xampp\php\php.exe' -d extension=php_sodium.dll DevPilot/tests/integration/independent-hub-connectivity.php
+```
+
+The test requires PHP cURL, OpenSSL and PDO SQLite. It creates temporary databases, keyring, certificate, sessions, and server processes under the system temporary directory, then removes them. It never uses production data.
+
+## Rollback
+
+Stop connector use before rollback. On the customer project database, apply `migrations/005_devpilot_project_owner.rollback.sql`, then `migrations/004_devpilot_connector.rollback.sql` if removing all project-side connector tables. On the Hub database, apply `migrations/006_devpilot_hub_registry.rollback.sql`. Rollback deletes connector authorization and inspection records.
