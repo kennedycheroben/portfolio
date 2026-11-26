@@ -22,6 +22,9 @@ $service = WebsiteServices::registration($pdo);
 $adminId = WebsiteAuth::currentAdminId();
 $error = '';
 $created = false;
+$connectorProjectId = 'php-' . substr(hash('sha256', rtrim((string) (getenv('APP_URL') ?: ''), '/') . '|' . dirname(__DIR__), false), 0, 24);
+$connectorStatus = null;
+try { $connectorStatus = WebsiteServices::connector($pdo)->status($connectorProjectId); } catch (Throwable) { $connectorStatus = null; }
 $postedUsername = '';
 $postedPassword = '';
 $wipePostedCredentials = static function () use (&$postedUsername, &$postedPassword): void {
@@ -89,9 +92,20 @@ require __DIR__ . '/includes/admin-sidebar.php';
 ?>
 <main class="admin-main" id="main-content">
   <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
-    <div><h1 class="mb-1">Registered Websites</h1><p class="text-muted mb-0">Phase 1 stores authorization and credentials only. It will not contact these websites.</p></div>
+    <div><h1 class="mb-1">Registered Websites</h1><p class="text-muted mb-0">Legacy website authorizations are preserved. Project connectors use one-time pairing and scoped bearer tokens.</p></div>
     <a class="btn-secondary" href="devpilot.php">Back to DevPilot</a>
   </div>
+
+  <section class="card mb-4" aria-labelledby="connect-devpilot-heading">
+    <div class="card-header"><strong id="connect-devpilot-heading">Connect this project to DevPilot</strong></div>
+    <div class="card-body">
+      <p class="mb-3">DevPilot identifies this project from its server-side origin and identity. No project URL or credential is entered here.</p>
+      <form method="post" action="api/devpilot-connector.php" onsubmit="return fetch(this.action,{method:'POST',headers:{'X-CSRF-Token':this.csrf_token.value}}).then(r=>r.json()).then(d=>{if(!d.success)throw new Error(d.error||'Connection failed'); alert('DevPilot connected: '+d.connection.project_name); location.reload();}).catch(e=>{alert(e.message);return false;})">
+        <?= csrf_field() ?><button class="btn-accent" type="submit">Connect DevPilot</button>
+      </form>
+      <?php if (is_array($connectorStatus)): ?><hr><dl class="row mb-0"><dt class="col-sm-3">Status</dt><dd class="col-sm-9"><?= e((string) $connectorStatus['status']) ?></dd><dt class="col-sm-3">Project identity</dt><dd class="col-sm-9"><?= e((string) $connectorStatus['project_id']) ?> · <?= e((string) $connectorStatus['project_name']) ?></dd><dt class="col-sm-3">Origin</dt><dd class="col-sm-9"><?= e((string) $connectorStatus['origin']) ?></dd><dt class="col-sm-3">Granted permissions</dt><dd class="col-sm-9"><?= e(implode(', ', (array) $connectorStatus['scopes'])) ?></dd><dt class="col-sm-3">Last connection</dt><dd class="col-sm-9"><?= e((string) $connectorStatus['connected_at']) ?></dd></dl><?php endif; ?>
+    </div>
+  </section>
 
   <section class="card mb-4" aria-labelledby="register-website-heading">
     <div class="card-header"><strong id="register-website-heading">Register a website</strong></div>

@@ -26,4 +26,9 @@ final class WebsiteServices
     {
         return new WebsiteRepository($pdo);
     }
+
+    public static function connector(PDO $pdo): \DevPilot\Connector\ProjectConnectorService
+    {
+        return new \DevPilot\Connector\ProjectConnectorService(new \DevPilot\Connector\PdoConnectorStore($pdo));
+    }
 }
