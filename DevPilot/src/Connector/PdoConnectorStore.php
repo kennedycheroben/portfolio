@@ -79,13 +79,13 @@ final class PdoConnectorStore implements ConnectorStore
         return $row;
     }
 
-    public function findConnectionByProject(string $projectId): ?array
+    public function findConnectionByProject(string $projectId, int $ownerId): ?array
     {
         $timestamps = $this->mysql
             ? 'UNIX_TIMESTAMP(connected_at) AS connected_at, UNIX_TIMESTAMP(last_seen_at) AS last_seen_at, UNIX_TIMESTAMP(expires_at) AS expires_at, UNIX_TIMESTAMP(revoked_at) AS revoked_at'
             : 'connected_at AS connected_at, last_seen_at AS last_seen_at, expires_at AS expires_at, revoked_at AS revoked_at';
-        $stmt = $this->pdo->prepare("SELECT connection_id, project_id, project_name, origin, scopes_json, status, owner_id, $timestamps FROM devpilot_connector_connections WHERE project_id=? ORDER BY id DESC LIMIT 1");
-        $stmt->execute([$projectId]);
+        $stmt = $this->pdo->prepare("SELECT connection_id, project_id, project_name, origin, scopes_json, status, owner_id, $timestamps FROM devpilot_connector_connections WHERE owner_id=? AND project_id=? ORDER BY id DESC LIMIT 1");
+        $stmt->execute([$ownerId,$projectId]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!is_array($row)) return null;
         $row['scopes'] = json_decode((string) $row['scopes_json'], true) ?: [];

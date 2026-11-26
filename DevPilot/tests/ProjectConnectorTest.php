@@ -88,6 +88,39 @@ final class ProjectConnectorTest
         $service->inspectForProject($authorization['access_token'],'project-a','https://a.example.org','PHP',104);
     }
 
+    public function testSqliteConnectionLookupAndMutationsAreOwnerScoped(): void
+    {
+        if (!in_array('sqlite', \PDO::getAvailableDrivers(), true)) throw new RuntimeException('SQLite PDO is required for the connector ownership regression test.');
+        $pdo = new \PDO('sqlite::memory:');
+        $pdo->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+        $pdo->exec('CREATE TABLE devpilot_connector_pairings (id INTEGER PRIMARY KEY AUTOINCREMENT, code_hash BLOB UNIQUE NOT NULL, project_id TEXT NOT NULL, project_name TEXT NOT NULL, origin TEXT NOT NULL, scopes_json TEXT NOT NULL, expires_at INTEGER NOT NULL, used_at INTEGER NULL, created_at INTEGER NOT NULL DEFAULT (unixepoch()), owner_id INTEGER NOT NULL DEFAULT 0)');
+        $pdo->exec('CREATE TABLE devpilot_connector_connections (id INTEGER PRIMARY KEY AUTOINCREMENT, connection_id TEXT UNIQUE NOT NULL, project_id TEXT NOT NULL, project_name TEXT NOT NULL, origin TEXT NOT NULL, scopes_json TEXT NOT NULL, token_hash BLOB UNIQUE NOT NULL, status TEXT NOT NULL, connected_at INTEGER NOT NULL, last_seen_at INTEGER NULL, expires_at INTEGER NOT NULL, revoked_at INTEGER NULL, owner_id INTEGER NOT NULL DEFAULT 0)');
+        $pdo->exec('CREATE INDEX idx_connector_owner_project ON devpilot_connector_connections(owner_id,project_id,status)');
+        $pdo->exec('CREATE TABLE devpilot_connector_attempts (id INTEGER PRIMARY KEY AUTOINCREMENT, ip_hash BLOB NOT NULL, attempted_at INTEGER NOT NULL)');
+
+        $service = new ProjectConnectorService(new \DevPilot\Connector\PdoConnectorStore($pdo));
+        $connectAs = static function (int $owner, int $time) use ($service): array {
+            $pairing = $service->beginPairing('shared-project','Shared Project','https://project.example.org',[ConnectorPolicy::INSPECT],$time,$owner);
+            return $service->authorize($pairing['pairing_code'],'shared-project','Shared Project','https://project.example.org',[ConnectorPolicy::INSPECT],$time + 1);
+        };
+
+        $ownerAFirst = $connectAs(101,1000);
+        $ownerB = $connectAs(202,1010);
+        if ($service->status('shared-project',101)['connection_id'] !== $ownerAFirst['connection_id']) throw new RuntimeException('Owner B connection hid Owner A status.');
+        if ($service->status('shared-project',202)['connection_id'] !== $ownerB['connection_id']) throw new RuntimeException('Owner A connection hid Owner B status.');
+        if ($service->status('shared-project',303) !== null) throw new RuntimeException('Unrelated owner retrieved a connection.');
+
+        $ownerASecond = $connectAs(101,1020);
+        if ($service->status('shared-project',101)['connection_id'] !== $ownerASecond['connection_id']) throw new RuntimeException('Owner A reconnect did not select its latest connection.');
+        if ($service->status('shared-project',202)['connection_id'] !== $ownerB['connection_id']) throw new RuntimeException('Owner A reconnect changed Owner B status.');
+        try { $service->inspect($ownerAFirst['access_token'],1022); throw new RuntimeException('Owner A old token stayed active after reconnect.'); }
+        catch (RuntimeException $exception) { if ($exception->getMessage() === 'Owner A old token stayed active after reconnect.') throw $exception; }
+        $service->revoke($ownerASecond['access_token'],1023);
+        if (($service->status('shared-project',101)['status'] ?? null) !== 'revoked') throw new RuntimeException('Owner A revocation was not persisted.');
+        if (($service->status('shared-project',202)['status'] ?? null) !== 'active') throw new RuntimeException('Owner A revocation changed Owner B status.');
+        $service->inspect($ownerB['access_token'],1024);
+    }
+
     public function testDashboardAndRegistryKeepAdminCsrfAndOwnerBoundState(): void
     {
         $root = dirname(__DIR__, 2);

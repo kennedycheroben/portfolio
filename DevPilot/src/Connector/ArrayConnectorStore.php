@@ -25,7 +25,7 @@ final class ArrayConnectorStore implements ConnectorStore
         foreach ($this->connections as $row) if ($row['token_hash'] === $tokenHash) return $row;
         return null;
     }
-    public function findConnectionByProject(string $projectId): ?array { foreach ($this->connections as $row) if ($row['project_id'] === $projectId && $row['status'] === 'active') return $row; return null; }
+    public function findConnectionByProject(string $projectId, int $ownerId): ?array { foreach ($this->connections as $row) if ($row['project_id'] === $projectId && (int) ($row['owner_id'] ?? 0) === $ownerId && $row['status'] === 'active') return $row; return null; }
     public function touchConnection(string $connectionId, int $now): void { $this->connections[$connectionId]['last_seen_at'] = $now; }
     public function revokeConnection(string $connectionId, int $now): void { $this->connections[$connectionId]['status'] = 'revoked'; $this->connections[$connectionId]['revoked_at'] = $now; }
     public function rotateConnection(string $connectionId, array $connection, int $now): void { $this->revokeConnection($connectionId, $now); $this->saveConnection($connection); }
